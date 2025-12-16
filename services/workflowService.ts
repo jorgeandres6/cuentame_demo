@@ -1,56 +1,59 @@
+
 import { RiskLevel, InterventionType } from "../types";
 
-// FASE 3: Motor de Flujo de Trabajo - Lógica de Derivación Institucional
-// Basado en el esquema oficial: "Rutas de derivación condicional"
+// FASE 3: Motor de Flujo de Trabajo - Lógica de Derivación Institucional (ECUADOR)
+// Basado en: "Protocolos de Actuación frente a situaciones de violencia detectadas o cometidas en el sistema educativo" (MINEDUC)
 
 export const determineProtocol = (risk: RiskLevel, typology: string): { protocol: InterventionType, assignedTo: string, routeDescription: string } => {
   
-  // Lógica específica basada en el nivel de riesgo según PDF
   switch (risk) {
     case RiskLevel.LOW:
-      // "Si riesgo BAJO -> DECE + seguimiento"
+      // Conflictos leves, disrupción en clase
       return {
         protocol: InterventionType.TUTORING,
-        assignedTo: 'DECE (Psicólogo Educativo)',
-        routeDescription: 'Ruta: DECE + Seguimiento interno'
+        assignedTo: 'DECE (Acompañamiento)',
+        routeDescription: 'Ruta: Mediación Escolar / Tutoría + Seguimiento DECE'
       };
 
     case RiskLevel.MEDIUM:
-      // "Si riesgo MEDIO -> DECE + Dirección"
-      // Tipologías comunes: Acoso escolar, Discriminación, Violencia digital, Abandono
+      // Acoso Escolar (Bullying), Discriminación, Negligencia leve
+      // Requiere informe escrito y notificación a representantes
       return {
         protocol: InterventionType.DIRECTION,
-        assignedTo: 'DECE y Dirección Académica',
-        routeDescription: 'Ruta: DECE + Dirección Institucional'
+        assignedTo: 'DECE y Rectorado',
+        routeDescription: 'Ruta: Informe de Hecho -> Rectorado -> Medidas Educativas / Restaurativas'
       };
 
     case RiskLevel.HIGH:
-      // "Si riesgo ALTO -> DECE + Fiscalía"
-      // Tipologías comunes: Violencia física grave, Violencia intrafamiliar
+      // Violencia Física, Violencia Intrafamiliar, Drogas
+      // Implica derivación externa administrativa o judicial
+      const isFamily = typology.includes("intrafamiliar");
       return {
         protocol: InterventionType.EXTERNAL,
-        assignedTo: 'DECE y Fiscalía',
-        routeDescription: 'Ruta: DECE + Denuncia en Fiscalía'
+        assignedTo: isFamily ? 'Junta Cantonal de Protección' : 'Distrito Educativo y Policía (DINAPEN)',
+        routeDescription: isFamily 
+            ? 'Ruta: Denuncia en Junta Cantonal de Protección de Derechos + Seguimiento DECE'
+            : 'Ruta: Distrito Educativo + DINAPEN + Medidas de Protección'
       };
 
     case RiskLevel.CRITICAL:
-      // "Si riesgo CRÍTICO -> DECE + Fiscalía + UDAI"
-      // Tipologías comunes: Violencia sexual, Ideación suicida (Suma Salud)
+      // Violencia Sexual, Suicidio, Delitos flagrantes
+      // Ruta de actuación inmediata (Denuncia Fiscalía en < 24h)
       let additional = "";
       if (typology.includes("suicida") || typology.includes("autolesiones")) {
-        additional = " + Salud Pública";
+        additional = " + Ministerio de Salud Pública (MSP)";
       }
       return {
         protocol: InterventionType.EXTERNAL,
-        assignedTo: 'Equipo Integral de Crisis',
-        routeDescription: `Ruta: DECE + Fiscalía + UDAI${additional}`
+        assignedTo: 'Fiscalía y Distrito Educativo',
+        routeDescription: `Ruta: DENUNCIA INMEDIATA FISCALÍA + Informe a Distrito + UDAI${additional}`
       };
 
     default:
       return {
         protocol: InterventionType.TUTORING,
-        assignedTo: 'Evaluación Pendiente',
-        routeDescription: 'Ruta: Evaluación Inicial'
+        assignedTo: 'DECE (Evaluación Inicial)',
+        routeDescription: 'Ruta: Entrevista preliminar y valoración de riesgo'
       };
   }
 };

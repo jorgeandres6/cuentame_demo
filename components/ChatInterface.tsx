@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, ConflictCase, RiskLevel, CaseStatus, UserProfile, InterventionRecord } from '../types';
+import { ChatMessage, ConflictCase, RiskLevel, CaseStatus, UserProfile, InterventionRecord, UserRole } from '../types';
 import { sendMessageToGemini, classifyCaseWithGemini } from '../services/geminiService';
 import { saveCase, generateEncryptedCode, saveUserProfile, addNotificationToUser } from '../services/storageService';
 import { determineProtocol } from '../services/workflowService';
@@ -52,14 +52,34 @@ const UserAvatar: React.FC<{ className?: string }> = ({ className = "w-10 h-10" 
 );
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
+  const DRAFT_KEY = `CHAT_DRAFT_${user.encryptedCode}`;
+
+  // Initialize state from LocalStorage if available, otherwise default
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+        const saved = localStorage.getItem(DRAFT_KEY);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error("Error reading chat draft", e);
+    }
+    
+    // DIFFERENTIATED INITIAL MESSAGE BASED ON ROLE
+    const isAdult = user.role === UserRole.PARENT || user.role === UserRole.TEACHER || user.role === UserRole.ADMIN || user.role === UserRole.STAFF;
+    
+    const initialText = isAdult
+        ? `Bienvenido al Sistema de Asistencia de Protocolos.\n\nSoy el Agente Virtual encargado de recibir su reporte. Por favor, describa la situación que desea informar indicando: qué ocurrió, quiénes están involucrados y cuándo sucedió.\n\nSu identidad se mantiene reservada según el protocolo.`
+        : `¡Hola! 🤖\n\nSoy tu Gestor de conflictos. Estoy aquí para escucharte en este espacio seguro y confidencial.\n\nPara empezar, ¿cómo te gustaría que te llame? (Puedes inventar un nombre secreto si prefieres 🛡️).`;
+
+    return [{
       id: 'welcome',
       sender: 'ai',
-      text: `¡Hola! 🤖\n\nSoy tu Agente Escolar. Estoy aquí para escucharte en este espacio seguro.\n\nPara empezar, ¿cómo te gustaría que te llame y con qué género te identificas (masculino, femenino o no binario)?\n(Por favor, elige un apodo o nombre ficticio, es preferible no usar tu nombre real completo por temas de anonimidad 🛡️).`,
+      text: initialText,
       timestamp: new Date().toISOString()
-    }
-  ]);
+    }];
+  });
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -74,6 +94,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // PERSISTENCE: Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(messages));
+    }
+  }, [messages, DRAFT_KEY]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -90,8 +117,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     setLoading(true);
     setRobotStatus('thinking');
 
-    // Call service without callback
-    const aiResponseText = await sendMessageToGemini(messages, userMsg.text);
+    // Call service passing user ROLE for context differentiation
+    const aiResponseText = await sendMessageToGemini(messages, userMsg.text, user.role);
 
     const aiMsg: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -148,6 +175,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     // Save to Case Repository
     saveCase(newCase);
     
+    // CLEAR DRAFT FROM STORAGE ON SUCCESS
+    localStorage.removeItem(DRAFT_KEY);
+
     setAnalyzing(false);
     setRobotStatus('idle');
     onCaseSubmitted(newCase);
@@ -162,7 +192,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
              <RobotAvatar className="w-10 h-10 sm:w-12 sm:h-12 text-indigo-600 dark:text-indigo-400" status={robotStatus} />
           </div>
           <div>
-            <h2 className="font-extrabold text-xl leading-tight">Agente Escolar</h2>
+            <h2 className="font-extrabold text-xl leading-tight">Gestor de conflictos</h2>
             <p className="text-xs text-indigo-200 font-bold uppercase tracking-wide flex items-center gap-1">
               <span className={`w-2 h-2 rounded-full ${robotStatus === 'thinking' ? 'bg-yellow-400 animate-ping' : 'bg-green-400 animate-pulse'}`}></span>
               {robotStatus === 'thinking' ? 'Procesando...' : robotStatus === 'speaking' ? 'Escribiendo...' : 'En línea'}
@@ -236,7 +266,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Escribe aquí lo que quieras contarme..."
+            placeholder={user.role === UserRole.STUDENT ? "Escribe aquí lo que quieras contarme..." : "Describa los hechos..."}
             className="flex-1 border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 rounded-full px-6 py-3 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900 transition font-medium"
             disabled={analyzing}
           />
