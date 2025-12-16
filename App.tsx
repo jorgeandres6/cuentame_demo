@@ -942,7 +942,7 @@ const App: React.FC = () => {
                 <span className="text-indigo-800 dark:text-indigo-400">CUÉNTAME</span>
               </h1>
               <p className="text-xl font-medium text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-                Plataforma de Gestión Integral de Conflictos Escolares
+                Prevención y gestión de conflictos
               </p>
           </div>
           <AuthScreen onLogin={setCurrentUser} />
