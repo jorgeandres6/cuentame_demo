@@ -71,6 +71,14 @@ export interface UserProfile {
   notifications: UserNotification[]; // Mensajes del sistema al usuario
 }
 
+export interface CaseEvidence {
+  id: string;
+  name: string;
+  mimeType: string;
+  data: string; // base64
+  date: string;
+}
+
 // Repositorio 2: Casos (Acceso Amplio / Anonimizado)
 export interface ConflictCase {
   id: string;
@@ -93,6 +101,7 @@ export interface ConflictCase {
   // History
   messages: ChatMessage[];
   interventions: InterventionRecord[];
+  evidence?: CaseEvidence[];
 }
 
 export interface ChatMessage {

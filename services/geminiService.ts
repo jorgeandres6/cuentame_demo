@@ -4,9 +4,8 @@ import { ChatMessage, RiskLevel, AIClassificationResult, UserRole } from "../typ
 
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-const modelId = "gemini-2.5-flash"; // Optimized for speed and logic
+const modelId = "gemini-2.5-flash"; 
 
-// Las 10 Tipologías oficiales del PDF (MINEDUC Ecuador)
 const OFFICIAL_TYPOLOGIES = [
   "Conflicto leve entre pares",
   "Acoso escolar (bullying)",
@@ -20,9 +19,15 @@ const OFFICIAL_TYPOLOGIES = [
   "Conflicto docente-estudiante"
 ];
 
-// --- INSTRUCCIONES DEL SISTEMA SEGÚN ROL (CONTEXTO ECUADOR) ---
+// --- PROTOCOLO DE ESCALAMIENTO (FRASE OBLIGATORIA) ---
+const ESCALATION_RULE = `
+REGLA CRÍTICA DE ESCALAMIENTO:
+Si el usuario te solicita algo que excede tus capacidades técnicas, si te encuentras en un error lógico, si el usuario pide diagnósticos médicos/legales que no puedes dar, o si normalmente dirías "Soy una IA y no puedo hacer eso", DEBES responder ÚNICAMENTE con la siguiente frase:
+"Voy a remitir tu caso a un especialista que puede manejarlo de mejor manera, por favor pulsa el boton de finalizar y generar reporte para continuar".
+NO uses frases como "Soy un modelo de lenguaje" o "No tengo cuerpo físico". Usa la frase de remisión solo en casos extremos de incapacidad de respuesta.
+`;
 
-// 1. Para Estudiantes: Contexto DECE y protección local.
+// 1. Para Estudiantes
 const STUDENT_SYSTEM_INSTRUCTION = `
 Eres el "Gestor de conflictos", un confidente seguro y parte del sistema de apoyo escolar en Ecuador.
 Tu usuario es un ESTUDIANTE (Niño, Niña o Adolescente).
@@ -32,40 +37,32 @@ CONTEXTO ECUADOR:
 - Si hay peligro inminente, recuerda que existen entidades como el ECU 911.
 
 OBJETIVOS:
-1. Crear un espacio seguro: Usa un lenguaje cálido (voseo o tuteo suave según región, pero estándar neutro funciona bien), sencillo y empático.
-2. Contención Emocional: Valida sus sentimientos bajo el enfoque de derechos del Código de la Niñez.
-3. Recopilación Sutil: Averigua qué pasó (hechos), quiénes (actores) y cuándo, sin revictimizar.
-4. Triaje: Identifica si hay riesgo físico inmediato para activar alertas.
+1. Crear un espacio seguro: Lenguaje cálido, sencillo y empático.
+2. Contención Emocional: Valida sentimientos bajo el enfoque de derechos.
+3. Recopilación Sutil: Hechos, actores y cuándo, sin revictimizar.
+4. Triaje: Identifica riesgos físicos.
+
+${ESCALATION_RULE}
 
 REGLAS DE TONO:
-- Sé paciente y protector.
-- NUNCA juzgues.
-- Si menciona suicidio, violencia sexual o drogas, mantén la calma, ofrece apoyo incondicional y prioriza obtener datos para que un adulto (DECE) intervenga inmediatamente.
-
-ESTRUCTURA INICIAL:
-- Si no sabes su nombre/alias, pregúntalo amablemente.
-- Pregunta cómo se siente hoy.
+- Sé paciente y protector. NUNCA juzgues.
 `;
 
-// 2. Para Adultos: Normativa LOEI, Protocolos MINEDUC, Código de la Niñez.
+// 2. Para Adultos
 const ADULT_SYSTEM_INSTRUCTION = `
 Eres el "Asistente Virtual de Protocolos", experto en la normativa educativa de Ecuador (LOEI, Reglamento General y Protocolos de Violencia del MINEDUC).
 Tu usuario es un ADULTO (Padre, Madre, Representante Legal o Docente).
 
 OBJETIVOS:
-1. Eficiencia y Objetividad: Recopila los datos necesarios para llenar la "Ficha de Registro de Hechos de Violencia" del MINEDUC.
-2. Marco Legal: Basa tus respuestas en la protección de derechos. Si es un delito, orienta sutilmente sobre la necesidad de denuncia externa (Fiscalía), pero enfatiza el reporte interno primero para activar la ruta.
-3. Orientación: Explique que la institución activará al DECE y a las autoridades competentes (Junta Cantonal, UDAI) según corresponda.
-4. Triaje Técnico: Clasifica el hecho para determinar si requiere separación temporal (medida de protección) o intervención educativa.
+1. Eficiencia y Objetividad: Recopila datos para la "Ficha de Registro de Hechos de Violencia".
+2. Marco Legal: Basa respuestas en protección de derechos.
+3. Orientación: Explica la activación del DECE y autoridades (Junta Cantonal, UDAI).
+
+${ESCALATION_RULE}
 
 REGLAS DE TONO:
 - Formal, institucional y empático.
-- Use terminología correcta: "Rutas y Protocolos", "Medidas de Protección", "Restitución de Derechos".
-- No prometa sanciones (eso es un proceso administrativo/disciplinario), prometa activación de protocolos.
-
-ESTRUCTURA INICIAL:
-- Confirma si reporta un hecho sobre su representado o si es testigo.
-- Solicita descripción cronológica clara de los hechos.
+- Use terminología correcta: "Rutas y Protocolos", "Medidas de Protección".
 `;
 
 export const sendMessageToGemini = async (
@@ -79,7 +76,6 @@ export const sendMessageToGemini = async (
       parts: [{ text: msg.text }]
     }));
 
-    // Select instruction based on Role
     const isAdult = userRole === UserRole.PARENT || userRole === UserRole.TEACHER || userRole === UserRole.ADMIN || userRole === UserRole.STAFF;
     const selectedInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
 
@@ -100,32 +96,29 @@ export const sendMessageToGemini = async (
   }
 };
 
-// Schema for Phase 2 Classification matching MINEDUC Logic
 const classificationSchema: Schema = {
   type: Type.OBJECT,
   properties: {
     typology: {
       type: Type.STRING,
       enum: OFFICIAL_TYPOLOGIES,
-      description: "La categoría exacta según Protocolos MINEDUC.",
+      description: "Categoría oficial MINEDUC.",
     },
     riskLevel: {
       type: Type.STRING,
       enum: [RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL],
-      description: "Nivel de riesgo. Acoso=MEDIO, Sexual/Suicidio=CRÍTICO (Activar ECU911/Fiscalía).",
     },
     summary: {
       type: Type.STRING,
-      description: "Resumen ejecutivo para la Ficha de Registro.",
+      description: "Resumen para la Ficha de Registro.",
     },
     recommendations: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
-      description: "Lista de 3 a 5 acciones técnicas para el DECE/Rectorado (Ej: 'Derivar a UDAI', 'Notificar a Junta Cantonal', 'Activar Protocolo de Violencia Sexual').",
+      description: "Acciones técnicas para el DECE.",
     },
     psychographics: {
       type: Type.OBJECT,
-      description: "Perfilado psicográfico.",
       properties: {
         interests: { type: Type.ARRAY, items: { type: Type.STRING } },
         values: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -144,20 +137,9 @@ export const classifyCaseWithGemini = async (messages: ChatMessage[]): Promise<A
   
   const prompt = `
     Analiza esta conversación de reporte escolar bajo el contexto de ECUADOR (MINEDUC).
-    
-    1. CLASIFICACIÓN (Lógica Protocolos de Violencia MINEDUC):
-       - "Conflicto leve" -> Riesgo BAJO (Mediación escolar posible salvo violencia).
-       - "Acoso escolar (bullying)" -> Riesgo MEDIO (Requiere intervención DECE + Autoridad).
-       - "Violencia física grave" -> Riesgo ALTO.
-       - "Violencia sexual" -> Riesgo CRÍTICO (Delito penal: Fiscalía obligatoria).
-       - "Violencia intrafamiliar" -> Riesgo ALTO (Junta Cantonal de Protección de Derechos).
-       - "Ideación suicida" -> Riesgo CRÍTICO (MSP / ECU 911).
-    
-    2. RECOMENDACIONES TÉCNICAS (Para el DECE/Rector):
-       - Usa terminología ecuatoriana: "Junta Cantonal", "Fiscalía", "UDAI", "Distrito Educativo", "MSP".
-       - Ejemplo: "Remitir informe a Fiscalía General del Estado", "Solicitar valoración psicopedagógica a UDAI", "Notificar a representantes legales según LOEI".
-    
-    3. PERFILADO: Extrae intereses, valores y estilo de vida implícitos.
+    1. CLASIFICACIÓN (Protocolos de Violencia MINEDUC).
+    2. RECOMENDACIONES TÉCNICAS (Junta Cantonal, Fiscalía, UDAI, Distrito, MSP).
+    3. PERFILADO PSICOGRÁFICO.
     
     TRANSCRIPCIÓN:
     ${conversationText}
@@ -173,15 +155,14 @@ export const classifyCaseWithGemini = async (messages: ChatMessage[]): Promise<A
       }
     });
 
-    const result = JSON.parse(response.text || "{}");
-    return result as AIClassificationResult;
+    return JSON.parse(response.text || "{}") as AIClassificationResult;
   } catch (error) {
     console.error("Classification Error:", error);
     return {
       typology: "Conflicto leve entre pares",
       riskLevel: RiskLevel.MEDIUM,
       summary: "Error en clasificación automática. Revisión manual requerida.",
-      recommendations: ["Entrevista DECE", "Revisión de Código de Convivencia"],
+      recommendations: ["Entrevista DECE"],
       psychographics: {
         interests: [],
         values: [],

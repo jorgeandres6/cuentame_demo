@@ -2,19 +2,16 @@
 import { UserProfile, ConflictCase, UserRole, UserNotification } from '../types';
 
 // In-memory simulation of the two distinct repositories
-// In a real architecture, these would be separate encrypted databases or tables with strict RLS.
-
 const USERS_KEY = 'CUENTAME_USERS';
 const CASES_KEY = 'CUENTAME_CASES';
-const DEMO_ACCESS_KEY = 'CUENTAME_DEMO_ACCESS'; // New key for Gate Users
-const DEMO_LOGS_KEY = 'CUENTAME_DEMO_LOGS'; // New key for Access Logs
+const DEMO_ACCESS_KEY = 'CUENTAME_DEMO_ACCESS'; 
+const DEMO_LOGS_KEY = 'CUENTAME_DEMO_LOGS';
 
-// --- TYPES FOR DEMO GATE ACCESS ---
 export interface DemoGateUser {
     id: string;
     username: string;
-    password: string; // In real app, this should be hashed
-    label: string;    // e.g., "Evaluador Ministerio", "Director Invitado"
+    password: string; 
+    label: string;    
     createdAt: string;
 }
 
@@ -25,7 +22,6 @@ export interface GateLoginLog {
     ip: string;
 }
 
-// Datos semilla para probar la aplicación inmediatamente
 const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_001',
@@ -101,7 +97,6 @@ const INITIAL_USERS: UserProfile[] = [
   }
 ];
 
-// Helper to check and seed data if empty
 const initializeData = () => {
   const users = localStorage.getItem(USERS_KEY);
   if (!users) {
@@ -109,10 +104,7 @@ const initializeData = () => {
   }
 };
 
-// Initialize immediately upon import
 initializeData();
-
-// --- SYSTEM GATE LOGIC (Demo Access) ---
 
 export const getSystemGateUsers = (): DemoGateUser[] => {
     const data = localStorage.getItem(DEMO_ACCESS_KEY);
@@ -134,16 +126,12 @@ export const registerSystemGateUser = (username: string, pass: string, label: st
 };
 
 export const verifySystemGateCredentials = (user: string, pass: string): boolean => {
-    // 1. Check Master Credentials
     if (user === 'cuentame2026' && pass === 'Cu3nt@m3') {
         return true;
     }
-    // 2. Check Dynamic Credentials
     const gateUsers = getSystemGateUsers();
     return gateUsers.some(u => u.username === user && u.password === pass);
 };
-
-// --- AUDIT LOG LOGIC ---
 
 export const getGateLoginLogs = (): GateLoginLog[] => {
     const data = localStorage.getItem(DEMO_LOGS_KEY);
@@ -153,15 +141,12 @@ export const getGateLoginLogs = (): GateLoginLog[] => {
 export const recordGateLogin = async (username: string): Promise<void> => {
     let ip = 'IP Privada / Desconocida';
     try {
-        // Simple call to a public IP echo service
         const response = await fetch('https://api.ipify.org?format=json');
         if (response.ok) {
             const data = await response.json();
             ip = data.ip;
         }
-    } catch (error) {
-        console.warn("Could not fetch IP address for log", error);
-    }
+    } catch (error) {}
 
     const logs = getGateLoginLogs();
     const newLog: GateLoginLog = {
@@ -170,19 +155,11 @@ export const recordGateLogin = async (username: string): Promise<void> => {
         timestamp: new Date().toISOString(),
         ip
     };
-    
-    // Add to beginning of array
     logs.unshift(newLog);
-    
-    // Optional: Limit log size to last 50 entries to prevent overflow in localstorage
     if (logs.length > 50) logs.length = 50;
-
     localStorage.setItem(DEMO_LOGS_KEY, JSON.stringify(logs));
 };
 
-// --- Repository 1: User Profiles (Restricted) ---
-
-// Helper to simulate encryption/hashing
 export const generateEncryptedCode = (userId: string): string => {
   return `ENC-${userId.substring(0, 4)}-${Math.random().toString(36).substring(7).toUpperCase()}`;
 };
@@ -198,7 +175,6 @@ export const saveUserProfile = (profile: UserProfile): void => {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 };
 
-// NEW: Helper to create a new user dynamically from the UI
 export const registerNewUser = (fullName: string, role: UserRole, password: string, grade?: string): UserProfile => {
     const prefixMap = {
         [UserRole.STUDENT]: 'EST',
@@ -207,17 +183,15 @@ export const registerNewUser = (fullName: string, role: UserRole, password: stri
         [UserRole.STAFF]: 'STAFF',
         [UserRole.ADMIN]: 'ADM'
     };
-    
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const code = `${prefixMap[role]}-2026-${randomSuffix}`;
-    
     const newUser: UserProfile = {
         id: `usr_${Date.now()}`,
         fullName,
         encryptedCode: code,
         password,
         role,
-        grade, // Optional
+        grade,
         phone: 'N/A',
         demographics: {},
         notifications: [],
@@ -229,7 +203,6 @@ export const registerNewUser = (fullName: string, role: UserRole, password: stri
             lifestyle: []
         }
     };
-    
     saveUserProfile(newUser);
     return newUser;
 };
@@ -239,20 +212,16 @@ export const getUsers = (): UserProfile[] => {
   return data ? JSON.parse(data) : [];
 };
 
-// Only accessible by ADMIN or System Process during Report Generation
 export const getUserProfileByCode = (encryptedCode: string): UserProfile | undefined => {
   const users = getUsers();
   return users.find(u => u.encryptedCode === encryptedCode);
 };
 
-// Modified Login: Uses Code and Password instead of Email
 export const loginUserByCredentials = (code: string, password: string): UserProfile | undefined => {
   const users = getUsers();
-  // Case insensitive check for code
   return users.find(u => u.encryptedCode.toUpperCase() === code.toUpperCase() && u.password === password);
 };
 
-// Helper to Add Notification to User
 export const addNotificationToUser = (
     encryptedCode: string, 
     title: string, 
@@ -262,7 +231,6 @@ export const addNotificationToUser = (
 ): void => {
     const users = getUsers();
     const userIndex = users.findIndex(u => u.encryptedCode === encryptedCode);
-    
     if (userIndex >= 0) {
         const newNotification: UserNotification = {
             id: Date.now().toString(),
@@ -273,31 +241,22 @@ export const addNotificationToUser = (
             type,
             relatedCaseId
         };
-        
-        // Ensure notifications array exists
-        if (!users[userIndex].notifications) {
-            users[userIndex].notifications = [];
-        }
-        
-        users[userIndex].notifications.unshift(newNotification); // Add to top
+        if (!users[userIndex].notifications) users[userIndex].notifications = [];
+        users[userIndex].notifications.unshift(newNotification);
         localStorage.setItem(USERS_KEY, JSON.stringify(users));
     }
 };
 
-// Helper for User to Reply to a Notification
 export const replyToNotification = (encryptedCode: string, notificationId: string, replyText: string): UserProfile | null => {
     const users = getUsers();
     const userIndex = users.findIndex(u => u.encryptedCode === encryptedCode);
-    
     if (userIndex >= 0) {
         const user = users[userIndex];
         const notifIndex = user.notifications.findIndex(n => n.id === notificationId);
-        
         if (notifIndex >= 0) {
             user.notifications[notifIndex].reply = replyText;
             user.notifications[notifIndex].replyDate = new Date().toISOString();
             user.notifications[notifIndex].read = true;
-            
             users[userIndex] = user;
             localStorage.setItem(USERS_KEY, JSON.stringify(users));
             return user;
@@ -305,8 +264,6 @@ export const replyToNotification = (encryptedCode: string, notificationId: strin
     }
     return null;
 };
-
-// --- Repository 2: Casos (Broad Access - Anonymous) ---
 
 export const saveCase = (conflictCase: ConflictCase): void => {
   const cases = getCases();
@@ -326,4 +283,8 @@ export const getCases = (): ConflictCase[] => {
 
 export const getCaseByCode = (code: string): ConflictCase | undefined => {
   return getCases().find(c => c.encryptedUserCode === code);
+};
+
+export const getCasesByUserCode = (code: string): ConflictCase[] => {
+    return getCases().filter(c => c.encryptedUserCode === code);
 };
