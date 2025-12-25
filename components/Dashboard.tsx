@@ -59,18 +59,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, onSelectCase }) => {
         <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">Panel Institucional</h1>
         
         <div className="flex flex-wrap items-center gap-3">
-             {/* Document Repository Button */}
-             <a 
-              href="#"
-              onClick={(e) => { e.preventDefault(); alert("En una implementación real, esto abriría el repositorio externo de documentos (Google Drive, SharePoint, etc.)"); }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition shadow-sm border border-blue-800 dark:border-blue-400 group"
-            >
-              <svg className="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-              Repositorio Documental
-            </a>
-
-            <span className="text-sm font-bold text-white bg-gray-800 dark:bg-gray-700 px-3 py-2 rounded shadow-sm">
-            Actualizado: {new Date().toLocaleTimeString()}
+            <span className="text-xs font-bold text-white bg-gray-800 dark:bg-gray-700 px-3 py-2 rounded shadow-sm uppercase tracking-wide">
+            Última Sincronización: {new Date().toLocaleTimeString()}
             </span>
         </div>
       </div>

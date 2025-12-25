@@ -12,39 +12,21 @@ interface ChatInterfaceProps {
 
 type RobotStatus = 'idle' | 'thinking' | 'speaking';
 
-// Friendly Robot Avatar Component (SVG)
-// Added status prop to control animations
 const RobotAvatar: React.FC<{ className?: string; status?: RobotStatus }> = ({ className = "w-10 h-10", status = 'idle' }) => (
   <svg className={`${className} text-indigo-600 dark:text-indigo-400 drop-shadow-sm transition-all duration-300`} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Body/Head Background */}
     <rect x="20" y="30" width="60" height="50" rx="12" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="3" />
-    {/* Ears/Antenna base */}
     <rect x="15" y="45" width="5" height="20" rx="2" fill="currentColor" />
     <rect x="80" y="45" width="5" height="20" rx="2" fill="currentColor" />
-    {/* Antenna */}
     <line x1="50" y1="30" x2="50" y2="15" stroke="currentColor" strokeWidth="3" />
-    {/* Antenna Light - Animates when Thinking */}
-    <circle 
-      cx="50" cy="12" r="5" 
-      fill="#F59E0B" 
-      stroke="currentColor" strokeWidth="2" 
-      className={status === 'thinking' ? 'animate-think' : ''}
-    />
-    {/* Eyes (Friendly/Big) */}
+    <circle cx="50" cy="12" r="5" fill="#F59E0B" stroke="currentColor" strokeWidth="2" className={status === 'thinking' ? 'animate-think' : ''} />
     <circle cx="35" cy="50" r="6" fill="white" />
     <circle cx="35" cy="50" r="2" fill="#1F2937" />
     <circle cx="65" cy="50" r="6" fill="white" />
     <circle cx="65" cy="50" r="2" fill="#1F2937" />
-    {/* Mouth (Smile) - Animates when Speaking */}
-    <path 
-      d="M40 65 Q50 72 60 65" 
-      stroke="currentColor" strokeWidth="3" strokeLinecap="round" 
-      className={status === 'speaking' ? 'animate-talk' : ''}
-    />
+    <path d="M40 65 Q50 72 60 65" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className={status === 'speaking' ? 'animate-talk' : ''} />
   </svg>
 );
 
-// User Avatar
 const UserAvatar: React.FC<{ className?: string }> = ({ className = "w-10 h-10" }) => (
   <div className={`${className} rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center border-2 border-white dark:border-gray-500 shadow-sm`}>
     <svg className="w-3/5 h-3/5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
@@ -54,20 +36,13 @@ const UserAvatar: React.FC<{ className?: string }> = ({ className = "w-10 h-10" 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) => {
   const DRAFT_KEY = `CHAT_DRAFT_${user.encryptedCode}`;
 
-  // Initialize state from LocalStorage if available, otherwise default
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
         const saved = localStorage.getItem(DRAFT_KEY);
-        if (saved) {
-            return JSON.parse(saved);
-        }
-    } catch (e) {
-        console.error("Error reading chat draft", e);
-    }
+        if (saved) return JSON.parse(saved);
+    } catch (e) {}
     
-    // DIFFERENTIATED INITIAL MESSAGE BASED ON ROLE
     const isAdult = user.role === UserRole.PARENT || user.role === UserRole.TEACHER || user.role === UserRole.ADMIN || user.role === UserRole.STAFF;
-    
     const initialText = isAdult
         ? `Bienvenido al Sistema de Asistencia de Protocolos.\n\nSoy el Agente Virtual encargado de recibir su reporte. Por favor, describa la situación que desea informar indicando: qué ocurrió, quiénes están involucrados y cuándo sucedió.\n\nSu identidad se mantiene reservada según el protocolo.`
         : `¡Hola! 🤖\n\nSoy tu Gestor de conflictos. Estoy aquí para escucharte en este espacio seguro y confidencial.\n\nPara empezar, ¿cómo te gustaría que te llame? (Puedes inventar un nombre secreto si prefieres 🛡️).`;
@@ -84,6 +59,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('idle');
+  const [shouldHighlightFinalize, setShouldHighlightFinalize] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -95,7 +71,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     scrollToBottom();
   }, [messages]);
 
-  // PERSISTENCE: Save messages to localStorage whenever they change
   useEffect(() => {
     if (messages.length > 0) {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(messages));
@@ -117,8 +92,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     setLoading(true);
     setRobotStatus('thinking');
 
-    // Call service passing user ROLE for context differentiation
     const aiResponseText = await sendMessageToGemini(messages, userMsg.text, user.role);
+
+    // Detectar si la IA usó la frase de escalamiento
+    if (aiResponseText.includes("remitir tu caso a un especialista")) {
+        setShouldHighlightFinalize(true);
+    }
 
     const aiMsg: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -136,25 +115,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     }, 4000);
   };
 
-  // Phase 2 -> Phase 3 Transition
   const handleFinalizeReport = async () => {
     setAnalyzing(true);
     setRobotStatus('thinking'); 
     
-    // 1. Contextualize & Enriched Classification (Phase 2 Logic)
     const classification = await classifyCaseWithGemini(messages);
-
-    // 2. Automatic Routing (Phase 3 Logic)
     const { protocol, assignedTo } = determineProtocol(classification.riskLevel, classification.typology);
 
-    // Update User Profile with DETAILED detected psychographics
     const updatedUser: UserProfile = { 
       ...user, 
       psychographics: classification.psychographics 
     };
     saveUserProfile(updatedUser);
 
-    // Create the Case Record
     const newCase: ConflictCase = {
       id: `CAS-${Date.now()}`,
       encryptedUserCode: user.encryptedCode,
@@ -172,12 +145,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
       interventions: []
     };
 
-    // Save to Case Repository
     saveCase(newCase);
-    
-    // CLEAR DRAFT FROM STORAGE ON SUCCESS
     localStorage.removeItem(DRAFT_KEY);
-
     setAnalyzing(false);
     setRobotStatus('idle');
     onCaseSubmitted(newCase);
@@ -199,11 +168,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
             </p>
           </div>
         </div>
-        {messages.length > 2 && (
+        {(messages.length > 2 || shouldHighlightFinalize) && (
             <button
             onClick={handleFinalizeReport}
             disabled={analyzing}
-            className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 px-5 rounded-full transition shadow-md disabled:opacity-50 uppercase tracking-wider border border-red-800"
+            className={`text-white text-xs font-bold py-2.5 px-5 rounded-full transition shadow-md disabled:opacity-50 uppercase tracking-wider border ${
+                shouldHighlightFinalize 
+                ? 'bg-amber-600 hover:bg-amber-700 border-amber-800 animate-pulse ring-4 ring-amber-500/30' 
+                : 'bg-red-600 hover:bg-red-700 border-red-800'
+            }`}
             >
             {analyzing ? 'Procesando...' : 'Finalizar Reporte'}
             </button>
