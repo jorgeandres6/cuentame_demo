@@ -309,19 +309,46 @@ const AuthScreen = ({ onLogin }: { onLogin: (u: UserProfile) => void }) => {
   );
 };
 
-const NotificationCard: React.FC<{ note: any; userCode: string; onReplied: (updatedUser: UserProfile) => void }> = ({ note, userCode, onReplied }) => {
+const NotificationCard: React.FC<{ 
+    note: any; 
+    userCode: string; 
+    onReplied: (updatedUser: UserProfile) => void;
+    onViewConversation?: (caseId: string) => void;
+}> = ({ note, userCode, onReplied, onViewConversation }) => {
     const [replyText, setReplyText] = useState('');
     const handleReply = () => { const u = replyToNotification(userCode, note.id, replyText); if (u) onReplied(u); };
+    
     return (
-        <div className="bg-gray-50 dark:bg-gray-900/50 p-5 rounded-xl border border-gray-100 dark:border-gray-700 relative">
-            <h4 className="font-bold dark:text-white">{note.title}</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{note.message}</p>
+        <div 
+            onClick={() => {
+                // Si hay caseId o senderCode, es un mensaje conversacional
+                if (note.senderCode || note.actionUrl) {
+                    onViewConversation?.(note.senderCode || note.id);
+                }
+            }}
+            className={`bg-gray-50 dark:bg-gray-900/50 p-5 rounded-xl border border-gray-100 dark:border-gray-700 relative transition ${
+                (note.senderCode || note.actionUrl) ? 'cursor-pointer hover:border-indigo-400 hover:shadow-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20' : ''
+            }`}
+        >
+            <div className="flex justify-between items-start">
+                <div className="flex-1">
+                    <h4 className="font-bold dark:text-white">{note.title}</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{note.content || note.message}</p>
+                    {note.senderCode && <p className="text-xs text-gray-400 mt-2">De: {note.senderName || note.senderCode}</p>}
+                    {note.timestamp && <p className="text-xs text-gray-400 mt-1">{new Date(note.timestamp).toLocaleString('es-ES')}</p>}
+                </div>
+                {(note.senderCode || note.actionUrl) && (
+                    <svg className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                )}
+            </div>
             {note.type === 'REQUEST' && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                     {note.reply ? <div className="text-xs text-green-600 font-bold">Respuesta: {note.reply}</div> : (
                         <div className="space-y-2">
                             <textarea className="w-full p-2 text-sm rounded border dark:bg-gray-800 dark:text-white" placeholder="Tu respuesta..." value={replyText} onChange={e => setReplyText(e.target.value)} />
-                            <button onClick={handleReply} className="bg-indigo-600 text-white text-xs p-2 rounded">Responder</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleReply(); }} className="bg-indigo-600 text-white text-xs p-2 rounded">Responder</button>
                         </div>
                     )}
                 </div>
@@ -473,6 +500,7 @@ const UserView: React.FC<{
     const [activeTab, setActiveTab] = useState<'CHAT' | 'NOTIFICATIONS' | 'CASES'>('CHAT');
     const [localUser, setLocalUser] = useState<UserProfile>(user);
     const [selectedUserCase, setSelectedUserCase] = useState<ConflictCase | null>(null);
+    const [expandedNotificationUser, setExpandedNotificationUser] = useState<string | null>(null);
 
     useEffect(() => { setLocalUser(user); }, [user]);
     const handleUserUpdate = (u: UserProfile) => { setLocalUser(u); };
@@ -609,7 +637,60 @@ const UserView: React.FC<{
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 min-h-[400px]">
                         <h3 className="text-xl font-bold dark:text-white mb-6">Buzón de Mensajes</h3>
                         <div className="space-y-4">
-                        {localUser.notifications?.length > 0 ? localUser.notifications?.map(n => <NotificationCard key={n.id} note={n} userCode={localUser.encryptedCode} onReplied={handleUserUpdate} />) : <div className="text-center py-20 text-gray-400">No hay mensajes.</div>}
+                            {expandedNotificationUser ? (
+                                // Vista expandida de conversación
+                                <div>
+                                    <button 
+                                        onClick={() => setExpandedNotificationUser(null)}
+                                        className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm mb-4 hover:underline"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                                        Volver a Buzón
+                                    </button>
+                                    <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                                        {localUser.notifications
+                                            ?.filter(n => n.senderCode === expandedNotificationUser)
+                                            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                                            .map(n => (
+                                                <div key={n.id} className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="text-xs text-gray-400 font-bold">{n.senderName || n.senderCode}</p>
+                                                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{n.content}</p>
+                                                        </div>
+                                                        <p className="text-xs text-gray-400">{new Date(n.timestamp).toLocaleTimeString('es-ES')}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                        <textarea 
+                                            placeholder="Escribe tu respuesta..." 
+                                            className="w-full p-3 text-sm rounded-lg border dark:bg-gray-900 dark:text-white dark:border-gray-700 mb-2"
+                                        />
+                                        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition">
+                                            Enviar Respuesta
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                // Vista de lista de notificaciones
+                                <>
+                                    {localUser.notifications?.length > 0 ? (
+                                        localUser.notifications.map(n => (
+                                            <NotificationCard 
+                                                key={n.id} 
+                                                note={n} 
+                                                userCode={localUser.encryptedCode} 
+                                                onReplied={handleUserUpdate}
+                                                onViewConversation={(senderCode) => setExpandedNotificationUser(senderCode)}
+                                            />
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-20 text-gray-400">No hay mensajes.</div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
