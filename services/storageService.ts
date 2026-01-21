@@ -545,6 +545,33 @@ export const getInbox = async (userCode: string): Promise<Message[]> => {
   }
 };
 
+// 🔧 NUEVO: Obtener notificaciones del usuario (convertidas de mensajes del inbox)
+export const getUserNotifications = async (userCode: string): Promise<UserNotification[]> => {
+  try {
+    // Obtener el inbox del usuario
+    const messages = await getInbox(userCode);
+    
+    // Convertir mensajes a notificaciones
+    const notifications: UserNotification[] = messages.map((msg: Message) => ({
+      id: msg.id,
+      type: msg.messageType === 'ALERT' ? 'alert' : 'message',
+      title: msg.messageType === 'ALERT' ? 'Alerta Importante' : 'Nuevo Mensaje',
+      content: msg.content,
+      timestamp: new Date(msg.createdAt),
+      read: false, // Por ahora asumimos que no están leídas
+      actionUrl: msg.caseId ? `/case/${msg.caseId}` : undefined,
+      senderCode: msg.senderCode,
+      senderName: msg.senderCode // Fallback al código
+    }));
+
+    console.log(`✅ [getUserNotifications] ${notifications.length} notificaciones para ${userCode}`);
+    return notifications;
+  } catch (error) {
+    console.warn(`⚠️ [getUserNotifications] Error obteniendo notificaciones:`, error);
+    return [];
+  }
+};
+
 // 🔧 NUEVO: Fallback para cuando no hay BD
 const getInboxFromLocalStorage = (userCode: string): Message[] => {
   try {

@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ChatInterface from './components/ChatInterface';
 import Dashboard from './components/Dashboard';
 import CaseDetail from './components/CaseDetail';
+import { MessagingInterface } from './components/MessagingInterface';
 import { UserRole, UserProfile, ConflictCase, RiskLevel, CaseStatus, CaseEvidence } from './types';
 import { 
     saveUserProfile, 
@@ -11,13 +12,13 @@ import {
     loginUserByCredentials, 
     replyToNotification, 
     registerNewUser, 
-    getUsers,
     verifySystemGateCredentials,
     registerSystemGateUser,
     getSystemGateUsers,
     getGateLoginLogs,
     recordGateLogin,
     getCasesByUserCode,
+    getUserNotifications,
     DemoGateUser,
     GateLoginLog,
     saveCase
@@ -171,12 +172,15 @@ const UserGeneratorModal = ({ onClose }: { onClose: () => void }) => {
     const [userList, setUserList] = useState<UserProfile[]>([]);
 
     useEffect(() => {
-        if (activeTab === 'LIST') setUserList(getUsers());
+        // Los usuarios ahora se almacenan en Azure SQL
+        // Esta sección es solo para demostración
     }, [activeTab, createdUser]); 
 
-    const handleCreate = (e: React.FormEvent) => {
+    const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
-        setCreatedUser(registerNewUser(form.name, form.role, form.pass, form.grade));
+        const newUser = await registerNewUser(form.name, form.role, form.pass, form.grade);
+        setCreatedUser(newUser);
+        setForm({ name: '', role: UserRole.STUDENT, pass: '', grade: '' });
     };
 
     return (
@@ -210,32 +214,53 @@ const UserGeneratorModal = ({ onClose }: { onClose: () => void }) => {
 const AuthScreen = ({ onLogin }: { onLogin: (u: UserProfile) => void }) => {
   const [formData, setFormData] = useState({ code: '', password: '' });
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const demoAccounts = [
-    { role: 'ESTUDIANTE', code: 'EST-2024-A', pass: '123', color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300' },
-    { role: 'FAMILIA', code: 'FAM-2024-B', pass: '123', color: 'text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300' },
-    { role: 'DOCENTE', code: 'DOC-2024-C', pass: '123', color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/20 dark:border-cyan-800 dark:text-cyan-300' },
-    { role: 'ADMIN', code: 'ADM-MASTER', pass: 'admin', color: 'text-gray-900 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white' },
-    { role: 'STAFF', code: 'STAFF-PSI', pass: 'staff', color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-300' },
+    { role: 'ESTUDIANTE', code: 'EST-2026-A', pass: '123', color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300' },
+    { role: 'FAMILIA', code: 'FAM-2026-B', pass: '123', color: 'text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300' },
+    { role: 'DOCENTE', code: 'DOC-2026-C', pass: '123', color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/20 dark:border-cyan-800 dark:text-cyan-300' },
+    { role: 'ADMIN', code: 'ADM-2026-MASTER', pass: 'admin', color: 'text-gray-900 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white' },
+    { role: 'STAFF', code: 'STAFF-2026-PSI', pass: 'staff', color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-300' },
   ];
 
   const fillDemo = (code: string, pass: string) => {
     setFormData({ code, password: pass });
   };
 
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+    try {
+      const u = await loginUserByCredentials(formData.code, formData.password);
+      setIsLoading(false);
+      if (u) {
+        onLogin(u);
+      } else {
+        setError('Código o contraseña incorrectos.');
+      }
+    } catch (err) {
+      setIsLoading(false);
+      setError('Error al conectar. Intenta de nuevo.');
+      console.error('Login error:', err);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto mt-8 space-y-8 animate-fadeIn">
         <div className="bg-white dark:bg-gray-800 p-8 sm:p-12 rounded-3xl shadow-2xl border border-gray-300 dark:border-gray-700">
             <h2 className="text-3xl font-extrabold text-center dark:text-white mb-8 tracking-tight">Acceso Seguro</h2>
-            <form onSubmit={e => { e.preventDefault(); const u = loginUserByCredentials(formData.code, formData.password); if (u) onLogin(u); else setError('Código o contraseña incorrectos.'); }} className="space-y-6">
+            <form onSubmit={handleLogin} className="space-y-6">
                 <div className="space-y-2">
                     <label className="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-widest ml-1">Código Único Institucional</label>
                     <input 
                         required 
                         className="w-full p-4 border-2 border-gray-400 dark:border-gray-600 rounded-2xl bg-white dark:bg-gray-950 text-gray-900 dark:text-white uppercase font-black focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition outline-none placeholder-gray-400" 
-                        placeholder="EJ: EST-2024-A" 
+                        placeholder="EJ: EST-2026-A" 
                         value={formData.code} 
-                        onChange={e => setFormData({...formData, code: e.target.value})} 
+                        onChange={e => setFormData({...formData, code: e.target.value})}
+                        disabled={isLoading}
                     />
                 </div>
                 <div className="space-y-2">
@@ -246,11 +271,16 @@ const AuthScreen = ({ onLogin }: { onLogin: (u: UserProfile) => void }) => {
                         className="w-full p-4 border-2 border-gray-400 dark:border-gray-600 rounded-2xl bg-white dark:bg-gray-950 text-gray-900 dark:text-white font-black focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition outline-none placeholder-gray-400" 
                         placeholder="••••••••" 
                         value={formData.password} 
-                        onChange={e => setFormData({...formData, password: e.target.value})} 
+                        onChange={e => setFormData({...formData, password: e.target.value})}
+                        disabled={isLoading}
                     />
                 </div>
                 {error && <p className="text-red-600 dark:text-red-400 text-center font-bold text-sm bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">{error}</p>}
-                <button className="w-full bg-indigo-700 text-white p-4 rounded-2xl font-black text-lg hover:bg-indigo-800 transition-all shadow-lg transform active:scale-95 uppercase tracking-widest">Ingresar al Sistema</button>
+                <button 
+                  disabled={isLoading}
+                  className="w-full bg-indigo-700 text-white p-4 rounded-2xl font-black text-lg hover:bg-indigo-800 transition-all shadow-lg transform active:scale-95 uppercase tracking-widest disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isLoading ? 'Conectando...' : 'Ingresar al Sistema'}
+                </button>
             </form>
         </div>
 
@@ -262,7 +292,8 @@ const AuthScreen = ({ onLogin }: { onLogin: (u: UserProfile) => void }) => {
                     <button 
                         key={idx}
                         onClick={() => fillDemo(acc.code, acc.pass)}
-                        className={`p-4 rounded-2xl border-2 transition-all hover:scale-105 active:scale-95 text-left flex flex-col gap-1 shadow-sm group ${acc.color}`}
+                        disabled={isLoading}
+                        className={`p-4 rounded-2xl border-2 transition-all hover:scale-105 active:scale-95 text-left flex flex-col gap-1 shadow-sm group ${acc.color} disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
                         <span className="text-[9px] font-black uppercase opacity-60 tracking-wider">{acc.role}</span>
                         <span className="text-xs font-bold font-mono tracking-tighter">{acc.code}</span>
@@ -446,7 +477,42 @@ const UserView: React.FC<{
     useEffect(() => { setLocalUser(user); }, [user]);
     const handleUserUpdate = (u: UserProfile) => { setLocalUser(u); };
     const notificationCount = localUser.notifications?.filter(n => !n.read).length || 0;
-    const myCases = useMemo(() => getCasesByUserCode(localUser.encryptedCode), [localUser.encryptedCode, activeTab, viewState]);
+
+    // 🔧 NUEVO: Efecto para recargar notificaciones cuando se abre la pestaña
+    useEffect(() => {
+        const loadNotifications = async () => {
+            try {
+                console.log(`🔄 [UserView] Recargando notificaciones para ${localUser.encryptedCode}`);
+                const notifications = await getUserNotifications(localUser.encryptedCode);
+                console.log(`✅ [UserView] Obtenidas ${notifications.length} notificaciones`);
+                setLocalUser(prev => ({
+                    ...prev,
+                    notifications: notifications
+                }));
+            } catch (error) {
+                console.error('❌ [UserView] Error cargando notificaciones:', error);
+            }
+        };
+
+        // Solo cargar cuando activeTab es NOTIFICATIONS
+        if (activeTab === 'NOTIFICATIONS') {
+            loadNotifications();
+            // Recargar cada 5 segundos mientras estamos en la pestaña
+            const interval = setInterval(loadNotifications, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, localUser.encryptedCode]);
+
+    const [myCases, setMyCases] = useState<ConflictCase[]>([]);
+    useEffect(() => {
+    const fetchMyCases = async () => {
+        const data = await getCasesByUserCode(localUser.encryptedCode);
+        setMyCases(data);
+    };
+    fetchMyCases();
+    }, [localUser.encryptedCode, activeTab, viewState]);
+
+    //const myCases = useMemo(() => getCasesByUserCode(localUser.encryptedCode), [localUser.encryptedCode, activeTab, viewState]);
 
     if (viewState === 'CHAT_SUCCESS') {
          return (
@@ -505,7 +571,7 @@ const UserView: React.FC<{
                                     </div>
                                 ) : (
                                     <div className="grid gap-4">
-                                        {myCases.map(c => (
+                                        {myCases && Array.isArray(myCases) && myCases.map(c => (
                                             <div 
                                                 key={c.id} 
                                                 onClick={() => setSelectedUserCase(c)}
@@ -557,12 +623,26 @@ const App: React.FC = () => {
   const [showDemoAccessManager, setShowDemoAccessManager] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [selectedCase, setSelectedCase] = useState<ConflictCase | null>(null);
-  const [viewState, setViewState] = useState<'HOME' | 'CHAT_SUCCESS'>('HOME');
+  const [viewState, setViewState] = useState<'HOME' | 'CHAT_SUCCESS' | 'MESSAGES'>('HOME');
   const [darkMode, setDarkMode] = useState(false);
+  const [allCases, setAllCases] = useState<ConflictCase[]>([]);
+  const [isLoadingCases, setIsLoadingCases] = useState(false);
 
   useEffect(() => { if (darkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); }, [darkMode]);
-  const [refreshTrigger, setRefreshTrigger] = useState(0); 
-  const allCases = useMemo(() => getCases(), [refreshTrigger, viewState]);
+  
+  // Función para recargar casos
+  const refreshCases = async () => {
+    setIsLoadingCases(true);
+    const cases = await getCases();
+    setAllCases(cases);
+    setIsLoadingCases(false);
+  };
+
+  // Cargar casos cuando cambia el viewState
+  useEffect(() => {
+    refreshCases();
+  }, [viewState]);
+
   const activeCase = useMemo(() => { if (!selectedCase) return null; return allCases.find(c => c.id === selectedCase.id) || selectedCase; }, [selectedCase, allCases]);
   const handleLogout = () => { setCurrentUser(null); setSelectedCase(null); setViewState('HOME'); };
 
@@ -597,7 +677,39 @@ const App: React.FC = () => {
         </Layout>
       ) : (
         <Layout userRole={currentUser.role} onLogout={handleLogout} darkMode={darkMode} toggleDarkMode={() => setDarkMode(!darkMode)}>
-          {activeCase ? <CaseDetail caseData={activeCase} onBack={() => { setSelectedCase(null); setRefreshTrigger(p => p+1); }} onUpdate={() => setRefreshTrigger(p => p+1)} /> : <Dashboard cases={allCases} onSelectCase={setSelectedCase} />}
+          <div className="flex gap-4 mb-4">
+            <button
+              onClick={() => setViewState('HOME')}
+              className={`px-4 py-2 rounded font-bold transition ${
+                viewState === 'HOME'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300'
+              }`}
+            >
+              📊 Dashboard
+            </button>
+            <button
+              onClick={() => setViewState('MESSAGES')}
+              className={`px-4 py-2 rounded font-bold transition ${
+                viewState === 'MESSAGES'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300'
+              }`}
+            >
+              💬 Mensajes
+            </button>
+          </div>
+          {viewState === 'MESSAGES' ? (
+            <MessagingInterface 
+              userCode={currentUser.encryptedCode}
+              userRole={currentUser.role}
+              isStaff={currentUser.role === UserRole.STAFF || currentUser.role === UserRole.ADMIN}
+            />
+          ) : activeCase ? (
+            <CaseDetail caseData={activeCase} userCode={currentUser.encryptedCode} onBack={() => { setSelectedCase(null); refreshCases(); }} onUpdate={() => refreshCases()} />
+          ) : (
+            <Dashboard cases={allCases} onSelectCase={setSelectedCase} />
+          )}
         </Layout>
       )}
     </>
