@@ -1,0 +1,7 @@
+# Oryx platform detection configuration
+# Disable automatic detection to prevent .NET Core false positives
+# Explicitly declare this is a Node.js application
+
+DISABLE_NODEJS_DETECTION=false
+ENABLE_NODE_MODULES_CACHE=true
+NODEJS_SKIP_UNAVAILABLE_EXTENSIONS=true

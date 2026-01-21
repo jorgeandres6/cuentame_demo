@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "buildProperties": {
+    "nodejs": {
+      "version": "24"
+    }
+  },
+  "components": {
+    "nodejs": true,
+    "npm": true
+  }
+}

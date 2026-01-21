@@ -1,10 +1,9 @@
 
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { Type } from "@google/genai";
 import { ChatMessage, RiskLevel, AIClassificationResult, UserRole } from "../types";
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-const modelId = "gemini-2.5-flash"; 
+// API endpoint for backend calls - use relative path for same domain
+const API_BASE = process.env.REACT_APP_API_URL || ''; 
 
 const OFFICIAL_TYPOLOGIES = [
   "Conflicto leve entre pares",
@@ -22,9 +21,21 @@ const OFFICIAL_TYPOLOGIES = [
 // --- PROTOCOLO DE ESCALAMIENTO (FRASE OBLIGATORIA) ---
 const ESCALATION_RULE = `
 REGLA CRÍTICA DE ESCALAMIENTO:
-Si el usuario te solicita algo que excede tus capacidades técnicas, si te encuentras en un error lógico, si el usuario pide diagnósticos médicos/legales que no puedes dar, o si normalmente dirías "Soy una IA y no puedo hacer eso", DEBES responder ÚNICAMENTE con la siguiente frase:
-"Voy a remitir tu caso a un especialista que puede manejarlo de mejor manera, por favor pulsa el boton de finalizar y generar reporte para continuar".
-NO uses frases como "Soy un modelo de lenguaje" o "No tengo cuerpo físico". Usa la frase de remisión solo en casos extremos de incapacidad de respuesta.
+NUNCA digas que eres un bot, IA o que "no puedes hacer algo". NUNCA.
+Solo después de intentar ayudar exhaustivamente, si realmente necesitas derivar, usa ÚNICAMENTE esta frase:
+"No estoy en facultad de resolver esto, por ende remitiré tu caso al DECE para que puedan continuar con el mismo. Por favor presiona el botón de finalizar y enviar reporte para que el DECE pueda proseguir."
+Esta frase se usa SOLO en casos extremos donde el usuario necesita intervención directa que requiere contacto físico o decisiones legales que solo profesionales pueden tomar.
+`;
+
+// --- PROTOCOLO DE INTENTAR SOLUCIONAR PRIMERO ---
+const ATTEMPT_SOLUTION_RULE = `
+REGLA DE PRIORIDAD: INTENTA SIEMPRE AYUDAR PRIMERO
+1. Escucha activamente y valida el problema.
+2. Ofrece estrategias, consejos o pasos concretos que el usuario PUEDE implementar ya.
+3. Si hay conflicto: propón diálogo, mediación, comunicación clara.
+4. Si hay acoso: sugiere documentar, avisar a docentes, hablar con padres/adultos de confianza.
+5. Si hay violencia leve: orienta sobre cómo reportar a autoridades escolares.
+6. SOLO después de agotar opciones, considera derivar al DECE.
 `;
 
 // 1. Para Estudiantes
@@ -41,11 +52,17 @@ OBJETIVOS:
 2. Contención Emocional: Valida sentimientos bajo el enfoque de derechos.
 3. Recopilación Sutil: Hechos, actores y cuándo, sin revictimizar.
 4. Triaje: Identifica riesgos físicos.
+5. INTENTA AYUDAR PRIMERO: Ofrece estrategias concretas que el estudiante pueda usar ya.
+
+${ATTEMPT_SOLUTION_RULE}
 
 ${ESCALATION_RULE}
 
 REGLAS DE TONO:
 - Sé paciente y protector. NUNCA juzgues.
+- Si el estudiante describe un conflicto: ofrece estrategias de comunicación, mediación o pasos para hablar con un adulto de confianza.
+- Si describe acoso: orienta sobre cómo documentar, avisar a un docente o llamar a sus padres.
+- Si describe violencia: mantén calma, ofrece lugares seguros (docente, director, hospital) y luego deriva al DECE/autoridades.
 `;
 
 // 2. Para Adultos
@@ -57,12 +74,18 @@ OBJETIVOS:
 1. Eficiencia y Objetividad: Recopila datos para la "Ficha de Registro de Hechos de Violencia".
 2. Marco Legal: Basa respuestas en protección de derechos.
 3. Orientación: Explica la activación del DECE y autoridades (Junta Cantonal, UDAI).
+4. INTENTA AYUDAR PRIMERO: Ofrece pasos concretos, protocolos o acciones que el adulto pueda implementar.
+
+${ATTEMPT_SOLUTION_RULE}
 
 ${ESCALATION_RULE}
 
 REGLAS DE TONO:
 - Formal, institucional y empático.
 - Use terminología correcta: "Rutas y Protocolos", "Medidas de Protección".
+- Si es un conflicto leve: sugiere documentación y comunicación con la institución educativa.
+- Si hay violencia: explica protocolos MINEDUC, rutas de denuncia (DECE, Fiscalía, ECU 911 si hay riesgo).
+- NUNCA digas "No puedo ayudarte" o "Eso le corresponde a autoridades". Explica QUÉ HACER y CÓMO hacerlo.
 `;
 
 export const sendMessageToGemini = async (
@@ -71,24 +94,18 @@ export const sendMessageToGemini = async (
   userRole: UserRole
 ): Promise<string> => {
   try {
-    const chatHistory = history.map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.text }]
-    }));
-
-    const isAdult = userRole === UserRole.PARENT || userRole === UserRole.TEACHER || userRole === UserRole.ADMIN || userRole === UserRole.STAFF;
-    const selectedInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
-
-    const chat = ai.chats.create({
-      model: modelId,
-      config: {
-        systemInstruction: selectedInstruction,
-      },
-      history: chatHistory
+    const response = await fetch(`${API_BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history, newMessage, userRole })
     });
 
-    const result = await chat.sendMessage({ message: newMessage });
-    return result.text || "Entendido. ¿Podrías darme un detalle más?";
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.response || "Entendido. ¿Podrías darme un detalle más?";
 
   } catch (error) {
     console.error("Gemini Chat Error:", error);
@@ -96,7 +113,7 @@ export const sendMessageToGemini = async (
   }
 };
 
-const classificationSchema: Schema = {
+const classificationSchema = {
   type: Type.OBJECT,
   properties: {
     typology: {
@@ -133,29 +150,18 @@ const classificationSchema: Schema = {
 };
 
 export const classifyCaseWithGemini = async (messages: ChatMessage[]): Promise<AIClassificationResult> => {
-  const conversationText = messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
-  
-  const prompt = `
-    Analiza esta conversación de reporte escolar bajo el contexto de ECUADOR (MINEDUC).
-    1. CLASIFICACIÓN (Protocolos de Violencia MINEDUC).
-    2. RECOMENDACIONES TÉCNICAS (Junta Cantonal, Fiscalía, UDAI, Distrito, MSP).
-    3. PERFILADO PSICOGRÁFICO.
-    
-    TRANSCRIPCIÓN:
-    ${conversationText}
-  `;
-
   try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: classificationSchema
-      }
+    const response = await fetch(`${API_BASE}/api/classify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages })
     });
 
-    return JSON.parse(response.text || "{}") as AIClassificationResult;
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return await response.json() as AIClassificationResult;
   } catch (error) {
     console.error("Classification Error:", error);
     return {

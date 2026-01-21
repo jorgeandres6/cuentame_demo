@@ -19,6 +19,7 @@ import {
     recordGateLogin,
     getCasesByUserCode,
     getUserNotifications,
+    sendMessageWithCase,
     DemoGateUser,
     GateLoginLog,
     saveCase
@@ -500,13 +501,42 @@ const UserView: React.FC<{
     const [activeTab, setActiveTab] = useState<'CHAT' | 'NOTIFICATIONS' | 'CASES'>('CHAT');
     const [localUser, setLocalUser] = useState<UserProfile>(user);
     const [selectedUserCase, setSelectedUserCase] = useState<ConflictCase | null>(null);
-    const [expandedNotificationUser, setExpandedNotificationUser] = useState<string | null>(null);
+    const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null); // ✅ NUEVA: Agrupar por caso en lugar de por usuario
+    const [replyText, setReplyText] = useState<string>(''); // ✅ NUEVA: Texto de respuesta
+    const [isReplying, setIsReplying] = useState(false); // ✅ NUEVA: Estado de envío
 
     useEffect(() => { setLocalUser(user); }, [user]);
     const handleUserUpdate = (u: UserProfile) => { setLocalUser(u); };
     const notificationCount = localUser.notifications?.filter(n => !n.read).length || 0;
 
-    // 🔧 NUEVO: Efecto para recargar notificaciones (con polling en foreground y background)
+    // ✅ NUEVO: Handler para enviar respuesta
+    const handleSendReply = async () => {
+        if (!replyText.trim() || !expandedCaseId) return;
+        
+        setIsReplying(true);
+        try {
+            // Obtener el primer mensaje del caso para saber a quién responder
+            const messagesInCase = localUser.notifications?.filter(n => n.caseId === expandedCaseId) || [];
+            if (messagesInCase.length === 0) return;
+            
+            const senderCode = messagesInCase[0].senderCode;
+            
+            // Enviar respuesta
+            console.log(`📤 [UserView] Enviando respuesta a ${senderCode} para caso ${expandedCaseId}`);
+            await sendMessageWithCase(expandedCaseId, senderCode, replyText, user.encryptedCode);
+            
+            // Limpiar y recargar
+            setReplyText('');
+            const updatedNotifications = await getUserNotifications(user.encryptedCode);
+            setLocalUser(prev => ({ ...prev, notifications: updatedNotifications }));
+            
+            console.log(`✅ [UserView] Respuesta enviada exitosamente`);
+        } catch (error) {
+            console.error(`❌ [UserView] Error enviando respuesta:`, error);
+        } finally {
+            setIsReplying(false);
+        }
+    };
     useEffect(() => {
         const loadNotifications = async () => {
             try {
@@ -637,19 +667,27 @@ const UserView: React.FC<{
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 min-h-[400px]">
                         <h3 className="text-xl font-bold dark:text-white mb-6">Buzón de Mensajes</h3>
                         <div className="space-y-4">
-                            {expandedNotificationUser ? (
-                                // Vista expandida de conversación
+                            {expandedCaseId ? (
+                                // ✅ NUEVA: Vista expandida de conversación por CASO
                                 <div>
                                     <button 
-                                        onClick={() => setExpandedNotificationUser(null)}
+                                        onClick={() => setExpandedCaseId(null)}
                                         className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm mb-4 hover:underline"
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                                         Volver a Buzón
                                     </button>
+                                    
+                                    {/* ✅ Encabezado con ID del caso */}
+                                    <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg mb-4 border border-indigo-200 dark:border-indigo-800">
+                                        <p className="text-xs text-gray-600 dark:text-gray-400">CASO</p>
+                                        <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{expandedCaseId}</p>
+                                    </div>
+                                    
+                                    {/* ✅ Mensajes agrupados por este caso */}
                                     <div className="space-y-3 max-h-[600px] overflow-y-auto">
                                         {localUser.notifications
-                                            ?.filter(n => n.senderCode === expandedNotificationUser)
+                                            ?.filter(n => n.caseId === expandedCaseId)
                                             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
                                             .map(n => (
                                                 <div key={n.id} className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
@@ -663,29 +701,71 @@ const UserView: React.FC<{
                                                 </div>
                                             ))}
                                     </div>
+                                    
+                                    {/* ✅ Área de respuesta */}
                                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                                         <textarea 
+                                            value={replyText}
+                                            onChange={(e) => setReplyText(e.target.value)}
                                             placeholder="Escribe tu respuesta..." 
-                                            className="w-full p-3 text-sm rounded-lg border dark:bg-gray-900 dark:text-white dark:border-gray-700 mb-2"
+                                            className="w-full p-3 text-sm rounded-lg border dark:bg-gray-900 dark:text-white dark:border-gray-700 mb-2 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                                         />
-                                        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition">
-                                            Enviar Respuesta
+                                        <button 
+                                            onClick={handleSendReply}
+                                            disabled={isReplying || !replyText.trim()}
+                                            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold transition"
+                                        >
+                                            {isReplying ? 'Enviando...' : 'Enviar Respuesta'}
                                         </button>
                                     </div>
                                 </div>
                             ) : (
-                                // Vista de lista de notificaciones
+                                // ✅ NUEVA: Vista de lista - Agrupar notificaciones por caso
                                 <>
-                                    {localUser.notifications?.length > 0 ? (
-                                        localUser.notifications.map(n => (
-                                            <NotificationCard 
-                                                key={n.id} 
-                                                note={n} 
-                                                userCode={localUser.encryptedCode} 
-                                                onReplied={handleUserUpdate}
-                                                onViewConversation={(senderCode) => setExpandedNotificationUser(senderCode)}
-                                            />
-                                        ))
+                                    {localUser.notifications && localUser.notifications.length > 0 ? (
+                                        (() => {
+                                            // Agrupar por caseId
+                                            const groupedByCaseId: Record<string, UserNotification[]> = {};
+                                            localUser.notifications.forEach(n => {
+                                                const caseId = n.caseId || 'SIN_CASO';
+                                                if (!groupedByCaseId[caseId]) {
+                                                    groupedByCaseId[caseId] = [];
+                                                }
+                                                groupedByCaseId[caseId].push(n);
+                                            });
+
+                                            return Object.entries(groupedByCaseId).map(([caseId, messages]) => (
+                                                <div 
+                                                    key={caseId}
+                                                    onClick={() => setExpandedCaseId(caseId)}
+                                                    className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-900/50 dark:to-gray-800/50 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 hover:shadow-md hover:from-blue-100 hover:to-indigo-100 dark:hover:from-gray-900 dark:hover:to-gray-800 transition cursor-pointer"
+                                                >
+                                                    {/* Encabezado del caso */}
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold">CASO</p>
+                                                            <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{caseId}</p>
+                                                        </div>
+                                                        <div className="bg-indigo-100 dark:bg-indigo-900/50 px-3 py-1 rounded-full">
+                                                            <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">{messages.length} {messages.length === 1 ? 'mensaje' : 'mensajes'}</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Mostrar último mensaje y remitente */}
+                                                    <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg mt-2">
+                                                        <p className="text-xs text-gray-400 font-bold mb-1">De: {messages[messages.length - 1].senderName || messages[messages.length - 1].senderCode}</p>
+                                                        <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{messages[messages.length - 1].content}</p>
+                                                        <p className="text-xs text-gray-400 mt-2">{new Date(messages[messages.length - 1].timestamp).toLocaleString('es-ES')}</p>
+                                                    </div>
+                                                    
+                                                    {/* Botón de ver detalles */}
+                                                    <div className="mt-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
+                                                        <span>Ver conversación completa</span>
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                    </div>
+                                                </div>
+                                            ));
+                                        })()
                                     ) : (
                                         <div className="text-center py-20 text-gray-400">No hay mensajes.</div>
                                     )}

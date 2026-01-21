@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, ConflictCase, RiskLevel, CaseStatus, UserProfile, InterventionRecord, UserRole } from '../types';
 import { sendMessageToGemini, classifyCaseWithGemini } from '../services/geminiService';
-import { saveCase, generateEncryptedCode, saveUserProfile, addNotificationToUser } from '../services/storageService';
+import { saveCase, generateEncryptedCode, saveUserProfile, addNotificationToUser, saveChat, createNewChat, addMessageToChat } from '../services/storageService';
 import { determineProtocol } from '../services/workflowService';
 
 interface ChatInterfaceProps {
@@ -35,6 +35,7 @@ const UserAvatar: React.FC<{ className?: string }> = ({ className = "w-10 h-10" 
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) => {
   const DRAFT_KEY = `CHAT_DRAFT_${user.encryptedCode}`;
+  const CHAT_ID_KEY = `CHAT_ID_${user.encryptedCode}`;
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -60,6 +61,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
   const [analyzing, setAnalyzing] = useState(false);
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('idle');
   const [shouldHighlightFinalize, setShouldHighlightFinalize] = useState(false);
+  const [chatId, setChatId] = useState<string>(() => {
+    const saved = localStorage.getItem(CHAT_ID_KEY);
+    return saved || createNewChat(user.encryptedCode, 'Reporte de Conflicto').id;
+  });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -74,8 +79,38 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
   useEffect(() => {
     if (messages.length > 0) {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(messages));
+        localStorage.setItem(CHAT_ID_KEY, chatId);
     }
-  }, [messages, DRAFT_KEY]);
+  }, [messages, DRAFT_KEY, chatId]);
+
+  // Guardar el chat automáticamente en la BD cada vez que cambian los mensajes
+  useEffect(() => {
+    const persistChat = async () => {
+      if (messages.length > 1) { // No guardar solo el mensaje de bienvenida
+        const chatMessages = messages.map(msg => ({
+          id: msg.id,
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.text,
+          timestamp: msg.timestamp
+        }));
+
+        const chatData = {
+          id: chatId,
+          encryptedUserCode: user.encryptedCode,
+          topic: 'Reporte de Conflicto',
+          messages: chatMessages,
+          status: 'ACTIVE'
+        };
+
+        const saved = await saveChat(chatData);
+        if (saved) {
+          localStorage.setItem(CHAT_ID_KEY, chatId);
+        }
+      }
+    };
+
+    persistChat();
+  }, [messages, chatId, user.encryptedCode]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -145,8 +180,30 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
       interventions: []
     };
 
-    saveCase(newCase);
+    // Guardar el caso
+    await saveCase(newCase);
+
+    // Guardar el chat completo con el ID del caso asociado
+    const finalChatMessages = messages.map(msg => ({
+      id: msg.id,
+      role: msg.sender === 'user' ? 'user' : 'assistant',
+      content: msg.text,
+      timestamp: msg.timestamp
+    }));
+
+    const finalChat = {
+      id: chatId,
+      encryptedUserCode: user.encryptedCode,
+      caseId: newCase.id,
+      topic: 'Reporte de Conflicto - Finalizado',
+      messages: finalChatMessages,
+      status: 'ARCHIVED' as const
+    };
+
+    await saveChat(finalChat);
+
     localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(CHAT_ID_KEY);
     setAnalyzing(false);
     setRobotStatus('idle');
     onCaseSubmitted(newCase);

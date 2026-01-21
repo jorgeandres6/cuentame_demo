@@ -560,6 +560,7 @@ export const getUserNotifications = async (userCode: string): Promise<UserNotifi
       timestamp: new Date(msg.createdAt),
       read: false, // Por ahora asumimos que no están leídas
       actionUrl: msg.caseId ? `/case/${msg.caseId}` : undefined,
+      caseId: msg.caseId, // ✅ Incluir caseId para agrupar
       senderCode: msg.senderCode,
       senderName: msg.senderCode // Fallback al código
     }));

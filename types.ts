@@ -42,12 +42,16 @@ export interface PsychographicProfile {
 export interface UserNotification {
   id: string;
   title: string;
-  message: string;
-  date: string;
+  content: string;
+  message?: string; // Backward compatibility
+  date?: string;    // Backward compatibility
+  timestamp: Date;
   read: boolean;
-  // New fields for bi-directional communication
-  type?: 'INFO' | 'REQUEST'; // INFO = Solo lectura, REQUEST = Requiere respuesta
-  relatedCaseId?: string;    // Para agrupar mensajes por caso en el admin
+  type?: 'alert' | 'message';
+  caseId?: string;           // Para agrupar mensajes por caso
+  senderCode: string;        // Código del que envía el mensaje
+  senderName?: string;       // Nombre del remitente
+  actionUrl?: string;        // URL de acción si la hay
   reply?: string;            // La respuesta del usuario
   replyDate?: string;        // Fecha de la respuesta
 }
@@ -77,6 +81,54 @@ export interface CaseEvidence {
   mimeType: string;
   data: string; // base64
   date: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant'; // Quién envía el mensaje
+  content: string; // Contenido del mensaje
+  timestamp: string; // ISO date string
+}
+
+export interface ChatConversation {
+  id: string; // ID único del chat
+  encryptedUserCode: string; // Quién participa en el chat
+  caseId?: string; // Si está asociado a un caso específico
+  topic: string; // Tema del chat (ej: "Conflicto en clase", "Consulta general")
+  messages: ChatMessage[]; // Array de todos los mensajes
+  createdAt: string; // ISO date string
+  updatedAt: string; // ISO date string
+  status: 'ACTIVE' | 'ARCHIVED'; // Si está activo o archivado
+}
+
+// ============ MESSAGING SYSTEM ============
+
+export interface Message {
+  id: string;
+  senderId: string;
+  senderCode: string;
+  senderRole: UserRole;
+  recipientId: string;
+  recipientCode: string;
+  recipientRole: UserRole;
+  content: string;
+  status: 'UNREAD' | 'READ' | 'DELETED';
+  messageType: 'TEXT' | 'FILE' | 'MEDIA' | 'ALERT';
+  attachmentUrl?: string;
+  conversationId: string;
+  caseId?: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export interface Conversation {
+  id: string;
+  participant1Code: string;
+  participant2Code: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Repositorio 2: Casos (Acceso Amplio / Anonimizado)

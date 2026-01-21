@@ -36,8 +36,8 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole, onLogout, darkMode,
 
   const openLibrary = (e: React.MouseEvent) => {
     e.preventDefault();
-    // Simulación de apertura de repositorio MINEDUC / Institucional
-    alert("Abriendo Biblioteca Virtual: Acceso a protocolos MINEDUC, Guías DECE y material de prevención de conflictos.");
+    // Redireccionar a Biblioteca Virtual en SharePoint
+    window.open('https://dinamicaweecuador-my.sharepoint.com/:f:/g/personal/jorge_dinamicaweecuador_onmicrosoft_com/IgCmAmwKKF2-Tb6Bdy4Z3pAmAbzxh5pi9me_LV97spvpalU?e=NM9zGD', '_blank');
   };
 
   return (
