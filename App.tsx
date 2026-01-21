@@ -5,7 +5,7 @@ import ChatInterface from './components/ChatInterface';
 import Dashboard from './components/Dashboard';
 import CaseDetail from './components/CaseDetail';
 import { MessagingInterface } from './components/MessagingInterface';
-import { UserRole, UserProfile, ConflictCase, RiskLevel, CaseStatus, CaseEvidence } from './types';
+import { UserRole, UserProfile, ConflictCase, RiskLevel, CaseStatus, CaseEvidence, UserNotification } from './types';
 import { 
     saveUserProfile, 
     getCases, 
