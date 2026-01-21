@@ -478,7 +478,7 @@ const UserView: React.FC<{
     const handleUserUpdate = (u: UserProfile) => { setLocalUser(u); };
     const notificationCount = localUser.notifications?.filter(n => !n.read).length || 0;
 
-    // 🔧 NUEVO: Efecto para recargar notificaciones cuando se abre la pestaña
+    // 🔧 NUEVO: Efecto para recargar notificaciones (con polling en foreground y background)
     useEffect(() => {
         const loadNotifications = async () => {
             try {
@@ -494,13 +494,15 @@ const UserView: React.FC<{
             }
         };
 
-        // Solo cargar cuando activeTab es NOTIFICATIONS
-        if (activeTab === 'NOTIFICATIONS') {
-            loadNotifications();
-            // Recargar cada 5 segundos mientras estamos en la pestaña
-            const interval = setInterval(loadNotifications, 5000);
-            return () => clearInterval(interval);
-        }
+        // Cargar notificaciones inmediatamente al cambiar de pestaña
+        loadNotifications();
+
+        // Configurar polling: 5s en foreground (NOTIFICATIONS tab), 30s en background
+        const interval = activeTab === 'NOTIFICATIONS' 
+            ? setInterval(loadNotifications, 5000)     // Refresh cada 5s cuando está viendo notificaciones
+            : setInterval(loadNotifications, 30000);   // Refresh cada 30s en background
+
+        return () => clearInterval(interval);
     }, [activeTab, localUser.encryptedCode]);
 
     const [myCases, setMyCases] = useState<ConflictCase[]>([]);
