@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "prestart": "bash prestart.sh",
-    "start": "node server.js",
+    "start": "npm ci --production --no-audit --no-fund --legacy-peer-deps 2>/dev/null || true && node server.js",
     "dev:server": "node server.js",
     "seed": "node seedDatabase.js",
     "postinstall": "bash postinstall.sh || true"
