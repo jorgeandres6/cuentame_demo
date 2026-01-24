@@ -740,24 +740,28 @@ app.post('/api/users/login', async (req, res) => {
       return res.status(500).json({ error: 'Database not connected' });
     }
 
-    const request = pool.request();
-    
-    // First check if profile columns exist
-    const columnsCheck = await pool.request().query(`
+    // First check what columns exist
+    const columnsQuery = await pool.request().query(`
       SELECT COLUMN_NAME 
       FROM INFORMATION_SCHEMA.COLUMNS 
-      WHERE TABLE_NAME = 'UserProfiles' 
-        AND COLUMN_NAME IN ('psychographics', 'sociographics')
+      WHERE TABLE_NAME = 'UserProfiles'
     `);
     
-    const hasProfiles = columnsCheck.recordset.length === 2;
-    console.log('📊 Profile columns exist:', hasProfiles);
+    const availableColumns = columnsQuery.recordset.map(r => r.COLUMN_NAME.toLowerCase());
+    console.log('📊 Available columns:', availableColumns.join(', '));
     
-    // Build query based on column existence
-    const selectFields = hasProfiles 
-      ? 'id, encryptedCode, role, grade, fullName, phone, psychographics, sociographics'
-      : 'id, encryptedCode, role, grade, fullName, phone';
+    // Build select list based on available columns
+    const baseFields = ['id', 'encryptedCode', 'role'];
+    const optionalFields = ['grade', 'fullName', 'phone', 'psychographics', 'sociographics'];
     
+    const selectFields = [
+      ...baseFields,
+      ...optionalFields.filter(field => availableColumns.includes(field.toLowerCase()))
+    ].join(', ');
+    
+    console.log('🔍 Querying with fields:', selectFields);
+    
+    const request = pool.request();
     const result = await request
       .input('code', sql.NVarChar, code.toUpperCase())
       .input('password', sql.NVarChar, password)
@@ -774,30 +778,30 @@ app.post('/api/users/login', async (req, res) => {
 
     // Parse JSON fields if they exist
     const user = result.recordset[0];
-    if (hasProfiles) {
-      if (user.psychographics) {
-        try {
-          user.psychographics = JSON.parse(user.psychographics);
-        } catch (e) {
-          console.warn('⚠️  Failed to parse psychographics:', e.message);
-          user.psychographics = null;
-        }
+    
+    if (user.psychographics && typeof user.psychographics === 'string') {
+      try {
+        user.psychographics = JSON.parse(user.psychographics);
+      } catch (e) {
+        console.warn('⚠️  Failed to parse psychographics:', e.message);
+        user.psychographics = null;
       }
-      if (user.sociographics) {
-        try {
-          user.sociographics = JSON.parse(user.sociographics);
-        } catch (e) {
-          console.warn('⚠️  Failed to parse sociographics:', e.message);
-          user.sociographics = null;
-        }
+    }
+    
+    if (user.sociographics && typeof user.sociographics === 'string') {
+      try {
+        user.sociographics = JSON.parse(user.sociographics);
+      } catch (e) {
+        console.warn('⚠️  Failed to parse sociographics:', e.message);
+        user.sociographics = null;
       }
     }
 
-    console.log('✅ Login successful for code:', code);
+    console.log('✅ Login successful for code:', code, 'Role:', user.role);
     res.json(user);
   } catch (error) {
     console.error('❌ Login error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message, stack: process.env.NODE_ENV === 'development' ? error.stack : undefined });
   }
 });
 
