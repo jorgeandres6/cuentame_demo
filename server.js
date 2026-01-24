@@ -183,14 +183,61 @@ app.get('/api/health', (req, res) => {
 // Chat endpoint
 app.post('/api/chat', async (req, res) => {
   try {
-    const { history, newMessage, userRole } = req.body;
+    const { history, newMessage, userRole, userProfile } = req.body;
 
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }
 
     const isAdult = ['parent', 'teacher', 'admin', 'staff'].includes(userRole);
-    const selectedInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
+    let selectedInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
+
+    // Enriquecer con contexto del usuario (igual que en Azure Foundry)
+    if (userProfile) {
+      let contextInfo = '\n\n--- CONTEXTO DEL USUARIO ---\n';
+      
+      if (userProfile.grade) {
+        contextInfo += `Grado/Curso: ${userProfile.grade}\n`;
+      }
+      
+      if (userProfile.psychographics) {
+        const psycho = userProfile.psychographics;
+        if (psycho.personalityTraits && psycho.personalityTraits.length > 0) {
+          contextInfo += `Rasgos de personalidad: ${psycho.personalityTraits.join(', ')}\n`;
+        }
+        if (psycho.interests && psycho.interests.length > 0) {
+          contextInfo += `Intereses: ${psycho.interests.join(', ')}\n`;
+        }
+        if (psycho.values && psycho.values.length > 0) {
+          contextInfo += `Valores importantes: ${psycho.values.join(', ')}\n`;
+        }
+      }
+      
+      if (userProfile.sociographics) {
+        const socio = userProfile.sociographics;
+        if (socio.schoolName) {
+          contextInfo += `Institución: ${socio.schoolName} (${socio.schoolType || 'N/A'})\n`;
+        }
+        if (socio.familyStructure) {
+          contextInfo += `Estructura familiar: ${socio.familyStructure}\n`;
+        }
+        if (socio.socialSupport) {
+          contextInfo += `Apoyo social: ${socio.socialSupport}\n`;
+        }
+        if (socio.socioeconomicStatus) {
+          contextInfo += `Nivel socioeconómico: ${socio.socioeconomicStatus}\n`;
+        }
+      }
+      
+      contextInfo += '\nUSA ESTE CONTEXTO para:\n';
+      contextInfo += '1. Adaptar tu tono y lenguaje según los rasgos de personalidad\n';
+      contextInfo += '2. Identificar factores de riesgo adicionales\n';
+      contextInfo += '3. Personalizar recomendaciones\n';
+      contextInfo += '4. Ser más empático si detectas vulnerabilidad\n';
+      contextInfo += '--- FIN CONTEXTO ---\n';
+      
+      selectedInstruction += contextInfo;
+    }
 
     const chatHistory = history.map(msg => ({
       role: msg.sender === 'user' ? 'user' : 'model',
@@ -285,7 +332,7 @@ async function callAzureFoundryAgent(messages, systemInstruction) {
  */
 app.post('/api/azure-foundry/chat', async (req, res) => {
   try {
-    const { history, newMessage, userRole } = req.body;
+    const { history, newMessage, userRole, userProfile } = req.body;
 
     if (!azureFoundryConfig.endpoint || !azureFoundryConfig.apiKey) {
       return res.status(500).json({ error: 'Azure Foundry not configured' });
@@ -293,7 +340,54 @@ app.post('/api/azure-foundry/chat', async (req, res) => {
 
     // Determine system instruction based on user role
     const isAdult = ['parent', 'teacher', 'admin', 'staff'].includes(userRole);
-    const systemInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
+    let systemInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
+
+    // Enriquecer system instruction con perfil del usuario si está disponible
+    if (userProfile) {
+      let contextInfo = '\n\n--- CONTEXTO DEL USUARIO ---\n';
+      
+      if (userProfile.grade) {
+        contextInfo += `Grado/Curso: ${userProfile.grade}\n`;
+      }
+      
+      if (userProfile.psychographics) {
+        const psycho = userProfile.psychographics;
+        if (psycho.personalityTraits && psycho.personalityTraits.length > 0) {
+          contextInfo += `Rasgos de personalidad: ${psycho.personalityTraits.join(', ')}\n`;
+        }
+        if (psycho.interests && psycho.interests.length > 0) {
+          contextInfo += `Intereses: ${psycho.interests.join(', ')}\n`;
+        }
+        if (psycho.values && psycho.values.length > 0) {
+          contextInfo += `Valores importantes: ${psycho.values.join(', ')}\n`;
+        }
+      }
+      
+      if (userProfile.sociographics) {
+        const socio = userProfile.sociographics;
+        if (socio.schoolName) {
+          contextInfo += `Institución: ${socio.schoolName} (${socio.schoolType || 'N/A'})\n`;
+        }
+        if (socio.familyStructure) {
+          contextInfo += `Estructura familiar: ${socio.familyStructure}\n`;
+        }
+        if (socio.socialSupport) {
+          contextInfo += `Apoyo social: ${socio.socialSupport}\n`;
+        }
+        if (socio.socioeconomicStatus) {
+          contextInfo += `Nivel socioeconómico: ${socio.socioeconomicStatus}\n`;
+        }
+      }
+      
+      contextInfo += '\nUSA ESTE CONTEXTO para:\n';
+      contextInfo += '1. Adaptar tu tono y lenguaje según los rasgos de personalidad\n';
+      contextInfo += '2. Identificar factores de riesgo adicionales (apoyo social débil, vulnerabilidad)\n';
+      contextInfo += '3. Personalizar recomendaciones según el contexto socioeconómico\n';
+      contextInfo += '4. Ser más empático si detectas rasgos como "Sensible", "Ansioso"\n';
+      contextInfo += '--- FIN CONTEXTO ---\n';
+      
+      systemInstruction += contextInfo;
+    }
 
     // Convert history to Azure format and add new message
     const messages = [

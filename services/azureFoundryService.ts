@@ -35,18 +35,20 @@ const OFFICIAL_TYPOLOGIES = [
  * @param history - Chat message history
  * @param newMessage - New user message
  * @param userRole - Role of the user (student or adult)
+ * @param userProfile - Complete user profile with sociographic and psychographic data
  * @returns Agent's response message
  */
 export const sendMessageToAzureFoundry = async (
   history: ChatMessage[], 
   newMessage: string,
-  userRole: UserRole
+  userRole: UserRole,
+  userProfile?: { psychographics?: any; sociographics?: any; grade?: string; }
 ): Promise<string> => {
   try {
     const response = await fetch(`${API_BASE}/api/azure-foundry/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history, newMessage, userRole })
+      body: JSON.stringify({ history, newMessage, userRole, userProfile })
     });
 
     if (!response.ok) {

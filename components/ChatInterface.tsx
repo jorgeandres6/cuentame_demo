@@ -129,7 +129,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     setLoading(true);
     setRobotStatus('thinking');
 
-    const aiResponseText = await sendMessageToAI(messages, userMsg.text, user.role);
+    const userProfile = {
+      psychographics: user.psychographics,
+      sociographics: user.sociographics,
+      grade: user.grade
+    };
+
+    const aiResponseText = await sendMessageToAI(messages, userMsg.text, user.role, userProfile);
 
     // Detectar si la IA usó la frase de escalamiento
     if (aiResponseText.includes("remitir tu caso a un especialista")) {
