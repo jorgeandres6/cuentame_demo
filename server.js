@@ -494,12 +494,17 @@ Proporciona respuestas estructuradas en JSON.`;
 // ============ INICIALIZAR CONEXIÓN A BD ============
 async function initializeDatabase() {
   try {
+    console.log('🔌 Attempting to connect to database...');
+    console.log('DB Server:', sqlConfig.server);
+    console.log('DB Name:', sqlConfig.database);
+    
     pool = new sql.ConnectionPool(sqlConfig);
     await pool.connect();
     console.log('✅ Conectado a Azure SQL Database');
     await createTables();
   } catch (error) {
-    console.error('❌ Error conectando a BD:', error);
+    console.error('❌ Error conectando a BD:', error.message);
+    console.error('Full error:', error);
     // No fallar si la BD no está disponible en desarrollo
   }
 }
@@ -728,7 +733,10 @@ app.post('/api/users/login', async (req, res) => {
   try {
     const { code, password } = req.body;
     
+    console.log('🔐 Login attempt for code:', code);
+    
     if (!pool) {
+      console.error('❌ Database pool not connected');
       return res.status(500).json({ error: 'Database not connected' });
     }
 
@@ -743,6 +751,7 @@ app.post('/api/users/login', async (req, res) => {
     `);
     
     const hasProfiles = columnsCheck.recordset.length === 2;
+    console.log('📊 Profile columns exist:', hasProfiles);
     
     // Build query based on column existence
     const selectFields = hasProfiles 
@@ -759,6 +768,7 @@ app.post('/api/users/login', async (req, res) => {
       `);
 
     if (result.recordset.length === 0) {
+      console.log('⚠️  Invalid credentials for code:', code);
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
@@ -769,6 +779,7 @@ app.post('/api/users/login', async (req, res) => {
         try {
           user.psychographics = JSON.parse(user.psychographics);
         } catch (e) {
+          console.warn('⚠️  Failed to parse psychographics:', e.message);
           user.psychographics = null;
         }
       }
@@ -776,13 +787,16 @@ app.post('/api/users/login', async (req, res) => {
         try {
           user.sociographics = JSON.parse(user.sociographics);
         } catch (e) {
+          console.warn('⚠️  Failed to parse sociographics:', e.message);
           user.sociographics = null;
         }
       }
     }
 
+    console.log('✅ Login successful for code:', code);
     res.json(user);
   } catch (error) {
+    console.error('❌ Login error:', error);
     res.status(500).json({ error: error.message });
   }
 });
