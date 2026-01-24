@@ -110,9 +110,6 @@ const SystemGateScreen = ({ onUnlock }: { onUnlock: (username: string) => void }
                     {error && <p className="text-red-400 text-sm font-bold text-center">{error}</p>}
                     <button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-lg transition transform hover:scale-[1.02]">DESBLOQUEAR SISTEMA</button>
                 </form>
-                <div className="mt-8 text-center text-gray-500 text-[10px] font-bold">
-                    <p>Demo Key: cuentame2026 / Cu3nt@m3</p>
-                </div>
                 <div className="mt-8 text-center"><button onClick={() => setShowTerms(true)} className="text-indigo-400 text-xs font-bold hover:underline">Términos y Condiciones</button></div>
             </div>
         </div>
@@ -219,10 +216,10 @@ const AuthScreen = ({ onLogin }: { onLogin: (u: UserProfile) => void }) => {
 
   const demoAccounts = [
     { role: 'ESTUDIANTE', code: 'EST-2026-A', pass: '123', color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-300' },
-    { role: 'FAMILIA', code: 'FAM-2026-B', pass: '123', color: 'text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300' },
+    { role: 'FAMILIAR', code: 'FAM-2026-B', pass: '123', color: 'text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300' },
     { role: 'DOCENTE', code: 'DOC-2026-C', pass: '123', color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/20 dark:border-cyan-800 dark:text-cyan-300' },
     { role: 'ADMIN', code: 'ADM-2026-MASTER', pass: 'admin', color: 'text-gray-900 bg-gray-100 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white' },
-    { role: 'STAFF', code: 'STAFF-2026-PSI', pass: 'staff', color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-300' },
+    { role: 'DECE', code: 'STAFF-2026-PSI', pass: 'staff', color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 dark:text-indigo-300' },
   ];
 
   const fillDemo = (code: string, pass: string) => {
@@ -361,6 +358,30 @@ const NotificationCard: React.FC<{
 const UserCaseDetailView: React.FC<{ caseData: ConflictCase; onBack: () => void }> = ({ caseData, onBack }) => {
     const [currentCase, setCurrentCase] = useState<ConflictCase>(caseData);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [evidences, setEvidences] = useState<any[]>([]);
+    const [uploadingFile, setUploadingFile] = useState(false);
+
+    // Cargar evidencias desde Azure Blob Storage
+    useEffect(() => {
+        const loadEvidences = async () => {
+            try {
+                const userCode = currentCase.encryptedUserCode;
+                const response = await fetch(`/api/evidence/case/${currentCase.id}`, {
+                    headers: { 'x-user-code': userCode }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setEvidences(data);
+                }
+            } catch (error) {
+                console.error('Error cargando evidencias:', error);
+            }
+        };
+
+        if (currentCase.id) {
+            loadEvidences();
+        }
+    }, [currentCase.id, currentCase.encryptedUserCode]);
 
     const steps = [
         { label: 'Recepción', status: CaseStatus.OPEN, color: 'bg-blue-500' },
@@ -371,30 +392,114 @@ const UserCaseDetailView: React.FC<{ caseData: ConflictCase; onBack: () => void 
 
     const currentStepIndex = steps.findIndex(s => s.status === currentCase.status);
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const base64Data = event.target?.result as string;
-            const newEvidence: CaseEvidence = {
-                id: Date.now().toString(),
-                name: file.name,
-                mimeType: file.type,
-                data: base64Data,
-                date: new Date().toISOString()
-            };
+        // Validar tipo
+        const allowedTypes = [
+            // Imágenes
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            // Documentos
+            'application/pdf', 'application/msword', 
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            // Videos
+            'video/mp4', 'video/mpeg', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+            // Audios
+            'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/aac', 'audio/mp4',
+            // Archivos comprimidos
+            'application/zip', 'application/x-rar-compressed', 'application/vnd.rar'
+        ];
+        if (!allowedTypes.includes(file.type)) {
+            alert('Solo se permiten imágenes, PDFs, documentos, videos, audios y archivos ZIP/RAR');
+            return;
+        }
 
-            const updatedCase = {
-                ...currentCase,
-                evidence: [...(currentCase.evidence || []), newEvidence]
-            };
+        // Validar tamaño (100MB para soportar videos)
+        if (file.size > 100 * 1024 * 1024) {
+            alert('El archivo no puede superar 100MB');
+            return;
+        }
 
-            setCurrentCase(updatedCase);
-            saveCase(updatedCase);
-        };
-        reader.readAsDataURL(file);
+        setUploadingFile(true);
+
+        try {
+            const userCode = currentCase.encryptedUserCode;
+
+            // 1. Obtener URL de subida con SAS token
+            const response = await fetch('/api/evidence/upload-url', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-user-code': userCode
+                },
+                body: JSON.stringify({
+                    caseId: currentCase.id,
+                    fileName: file.name,
+                    contentType: file.type,
+                    fileSize: file.size
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('No se pudo generar URL de subida');
+            }
+
+            const { uploadUrl, blobName } = await response.json();
+
+            // 2. Subir archivo directamente a Azure Blob Storage
+            const uploadResponse = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'x-ms-blob-type': 'BlockBlob',
+                    'Content-Type': file.type
+                },
+                body: file
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error('Error al subir archivo a Azure');
+            }
+
+            // 3. Registrar metadata en BD
+            const registerResponse = await fetch('/api/evidence/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-user-code': userCode
+                },
+                body: JSON.stringify({
+                    caseId: currentCase.id,
+                    blobName,
+                    fileName: file.name,
+                    contentType: file.type,
+                    fileSize: file.size
+                })
+            });
+
+            if (!registerResponse.ok) {
+                throw new Error('Error al registrar evidencia');
+            }
+
+            // 4. Recargar lista de evidencias
+            const listResponse = await fetch(`/api/evidence/case/${currentCase.id}`, {
+                headers: { 'x-user-code': userCode }
+            });
+
+            if (listResponse.ok) {
+                const data = await listResponse.json();
+                setEvidences(data);
+            }
+
+            alert('✅ Evidencia subida correctamente');
+        } catch (error: any) {
+            console.error('Error subiendo evidencia:', error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            setUploadingFile(false);
+            // Limpiar input
+            e.target.value = '';
+        }
     };
 
     return (
@@ -430,37 +535,47 @@ const UserCaseDetailView: React.FC<{ caseData: ConflictCase; onBack: () => void 
                 </div>
             </div>
 
-            {/* Evidencias */}
+            {/* Evidencias desde Azure Blob Storage */}
             <div className="space-y-4">
                 <div className="flex justify-between items-center">
                     <h4 className="text-sm font-extrabold uppercase text-gray-500 tracking-widest">Evidencias del Caso</h4>
                     <button 
                         onClick={() => fileInputRef.current?.click()}
-                        className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-lg text-xs font-black hover:bg-indigo-200 transition shadow-sm border border-indigo-200 dark:border-indigo-800 flex items-center gap-2"
+                        disabled={uploadingFile}
+                        className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-lg text-xs font-black hover:bg-indigo-200 transition shadow-sm border border-indigo-200 dark:border-indigo-800 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                        CARGAR EVIDENCIAS
+                        {uploadingFile ? 'SUBIENDO...' : 'CARGAR EVIDENCIAS'}
                     </button>
-                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        onChange={handleFileUpload}
+                        accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,.doc,.docx"
+                        disabled={uploadingFile}
+                    />
                 </div>
                 
-                {(!currentCase.evidence || currentCase.evidence.length === 0) ? (
-                    <div className="p-8 text-center border-2 border-dashed rounded-xl text-gray-400 font-bold uppercase text-xs">No se han subido archivos de evidencia.</div>
+                {evidences.length === 0 ? (
+                    <div className="p-8 text-center border-2 border-dashed rounded-xl text-gray-400 font-bold uppercase text-xs">
+                        {uploadingFile ? 'Subiendo archivo...' : 'No se han subido archivos de evidencia.'}
+                    </div>
                 ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {currentCase.evidence.map((ev) => (
+                        {evidences.map((ev) => (
                             <div key={ev.id} className="group relative bg-gray-50 dark:bg-gray-900/50 p-2 rounded-xl border border-gray-200 dark:border-gray-700 aspect-square flex flex-col items-center justify-center overflow-hidden">
-                                {ev.mimeType.startsWith('image/') ? (
-                                    <img src={ev.data} alt={ev.name} className="w-full h-full object-cover rounded-lg" />
+                                {ev.contentType.startsWith('image/') ? (
+                                    <img src={ev.url} alt={ev.fileName} className="w-full h-full object-cover rounded-lg" />
                                 ) : (
                                     <div className="flex flex-col items-center gap-1">
                                         <svg className="w-8 h-8 text-indigo-400" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
-                                        <span className="text-[8px] font-bold text-center break-all line-clamp-2">{ev.name}</span>
+                                        <span className="text-[8px] font-bold text-center break-all line-clamp-2">{ev.fileName}</span>
                                     </div>
                                 )}
                                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <a href={ev.data} download={ev.name} className="text-white bg-indigo-600 p-2 rounded-full shadow-lg">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    <a href={ev.url} target="_blank" rel="noopener noreferrer" className="text-white bg-indigo-600 p-2 rounded-full shadow-lg">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                                     </a>
                                 </div>
                             </div>
@@ -501,65 +616,60 @@ const UserView: React.FC<{
     const [activeTab, setActiveTab] = useState<'CHAT' | 'NOTIFICATIONS' | 'CASES'>('CHAT');
     const [localUser, setLocalUser] = useState<UserProfile>(user);
     const [selectedUserCase, setSelectedUserCase] = useState<ConflictCase | null>(null);
-    const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null); // ✅ NUEVA: Agrupar por caso en lugar de por usuario
-    const [replyText, setReplyText] = useState<string>(''); // ✅ NUEVA: Texto de respuesta
-    const [isReplying, setIsReplying] = useState(false); // ✅ NUEVA: Estado de envío
+    const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
+    const [replyText, setReplyText] = useState<string>('');
+    const [isReplying, setIsReplying] = useState(false);
+    const [messageUnreadCount, setMessageUnreadCount] = useState(0); // Contador de mensajes no leídos
 
     useEffect(() => { setLocalUser(user); }, [user]);
     const handleUserUpdate = (u: UserProfile) => { setLocalUser(u); };
     const notificationCount = localUser.notifications?.filter(n => !n.read).length || 0;
 
-    // ✅ NUEVO: Handler para enviar respuesta
+    // Handler para enviar respuesta
     const handleSendReply = async () => {
         if (!replyText.trim() || !expandedCaseId) return;
         
         setIsReplying(true);
         try {
-            // Obtener el primer mensaje del caso para saber a quién responder
             const messagesInCase = localUser.notifications?.filter(n => n.caseId === expandedCaseId) || [];
             if (messagesInCase.length === 0) return;
             
             const senderCode = messagesInCase[0].senderCode;
-            
-            // Enviar respuesta
-            console.log(`📤 [UserView] Enviando respuesta a ${senderCode} para caso ${expandedCaseId}`);
             await sendMessageWithCase(expandedCaseId, senderCode, replyText, user.encryptedCode);
             
-            // Limpiar y recargar
             setReplyText('');
             const updatedNotifications = await getUserNotifications(user.encryptedCode);
             setLocalUser(prev => ({ ...prev, notifications: updatedNotifications }));
-            
-            console.log(`✅ [UserView] Respuesta enviada exitosamente`);
         } catch (error) {
-            console.error(`❌ [UserView] Error enviando respuesta:`, error);
+            console.error('Error enviando respuesta:', error);
         } finally {
             setIsReplying(false);
         }
     };
+
+    // Polling de notificaciones y actualización de contador de mensajes
     useEffect(() => {
         const loadNotifications = async () => {
             try {
-                console.log(`🔄 [UserView] Recargando notificaciones para ${localUser.encryptedCode}`);
                 const notifications = await getUserNotifications(localUser.encryptedCode);
-                console.log(`✅ [UserView] Obtenidas ${notifications.length} notificaciones`);
                 setLocalUser(prev => ({
                     ...prev,
                     notifications: notifications
                 }));
+                
+                // Actualizar contador de mensajes no leídos
+                const { getUnreadCount } = await import('./services/storageService');
+                const unreadCount = await getUnreadCount(localUser.encryptedCode);
+                setMessageUnreadCount(unreadCount);
             } catch (error) {
-                console.error('❌ [UserView] Error cargando notificaciones:', error);
+                console.error('Error cargando notificaciones:', error);
             }
         };
 
-        // Cargar notificaciones inmediatamente al cambiar de pestaña
         loadNotifications();
-
-        // Configurar polling: 5s en foreground (NOTIFICATIONS tab), 30s en background
         const interval = activeTab === 'NOTIFICATIONS' 
-            ? setInterval(loadNotifications, 5000)     // Refresh cada 5s cuando está viendo notificaciones
-            : setInterval(loadNotifications, 30000);   // Refresh cada 30s en background
-
+            ? setInterval(loadNotifications, 5000)
+            : setInterval(loadNotifications, 30000);
         return () => clearInterval(interval);
     }, [activeTab, localUser.encryptedCode]);
 
@@ -608,7 +718,7 @@ const UserView: React.FC<{
                 </button>
                 <button onClick={() => { setActiveTab('NOTIFICATIONS'); setSelectedUserCase(null); }} className={`flex-1 py-3 px-4 rounded-lg text-xs font-bold transition flex justify-center items-center gap-2 ${activeTab === 'NOTIFICATIONS' ? 'bg-white dark:bg-gray-800 text-indigo-700 dark:text-indigo-400 shadow-md' : 'text-gray-500 hover:text-gray-800'}`}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                    Buzón {notificationCount > 0 && <span className="bg-red-500 text-white text-[9px] px-1 rounded-full">{notificationCount}</span>}
+                    Buzón {messageUnreadCount > 0 && <span className="bg-red-500 text-white text-[9px] px-1 rounded-full">{messageUnreadCount}</span>}
                 </button>
             </div>
 
@@ -668,41 +778,67 @@ const UserView: React.FC<{
                         <h3 className="text-xl font-bold dark:text-white mb-6">Buzón de Mensajes</h3>
                         <div className="space-y-4">
                             {expandedCaseId ? (
-                                // ✅ NUEVA: Vista expandida de conversación por CASO
                                 <div>
                                     <button 
-                                        onClick={() => setExpandedCaseId(null)}
+                                        onClick={async () => {
+                                            // Marcar mensajes como leídos al cerrar
+                                            const messagesInCase = localUser.notifications?.filter(n => n.caseId === expandedCaseId && !n.read) || [];
+                                            if (messagesInCase.length > 0) {
+                                                const { markAsRead } = await import('./services/storageService');
+                                                await Promise.all(messagesInCase.map(msg => markAsRead(msg.id)));
+                                                const updatedNotifications = await getUserNotifications(user.encryptedCode);
+                                                setLocalUser(prev => ({ ...prev, notifications: updatedNotifications }));
+                                                const { getUnreadCount } = await import('./services/storageService');
+                                                const unreadCount = await getUnreadCount(localUser.encryptedCode);
+                                                setMessageUnreadCount(unreadCount);
+                                            }
+                                            setExpandedCaseId(null);
+                                        }}
                                         className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm mb-4 hover:underline"
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                                         Volver a Buzón
                                     </button>
                                     
-                                    {/* ✅ Encabezado con ID del caso */}
                                     <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg mb-4 border border-indigo-200 dark:border-indigo-800">
                                         <p className="text-xs text-gray-600 dark:text-gray-400">CASO</p>
                                         <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{expandedCaseId}</p>
                                     </div>
                                     
-                                    {/* ✅ Mensajes agrupados por este caso */}
                                     <div className="space-y-3 max-h-[600px] overflow-y-auto">
                                         {localUser.notifications
                                             ?.filter(n => n.caseId === expandedCaseId)
                                             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-                                            .map(n => (
-                                                <div key={n.id} className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                                                    <div className="flex justify-between items-start">
-                                                        <div>
-                                                            <p className="text-xs text-gray-400 font-bold">{n.senderName || n.senderCode}</p>
-                                                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{n.content}</p>
+                                            .map(n => {
+                                                const isReceived = n.senderCode !== localUser.encryptedCode;
+                                                return (
+                                                    <div key={n.id} className={`flex ${isReceived ? 'justify-start' : 'justify-end'}`}>
+                                                        <div className={`max-w-xs px-4 py-3 rounded-2xl ${
+                                                            isReceived 
+                                                                ? 'bg-blue-100 dark:bg-blue-900/40 border border-blue-300 dark:border-blue-700' 
+                                                                : 'bg-emerald-100 dark:bg-emerald-900/40 border border-emerald-300 dark:border-emerald-700'
+                                                        }`}>
+                                                            <p className={`text-xs font-bold mb-1 ${
+                                                                isReceived 
+                                                                    ? 'text-blue-700 dark:text-blue-300' 
+                                                                    : 'text-emerald-700 dark:text-emerald-300'
+                                                            }`}>
+                                                                {isReceived ? `📨 ${n.senderName || n.senderCode}` : '✉️ Tú'}
+                                                            </p>
+                                                            <p className="text-sm text-gray-800 dark:text-gray-100 font-medium">{n.content}</p>
+                                                            <p className={`text-xs mt-2 ${
+                                                                isReceived 
+                                                                    ? 'text-blue-600 dark:text-blue-400' 
+                                                                    : 'text-emerald-600 dark:text-emerald-400'
+                                                            }`}>
+                                                                {new Date(n.timestamp).toLocaleTimeString('es-ES')}
+                                                            </p>
                                                         </div>
-                                                        <p className="text-xs text-gray-400">{new Date(n.timestamp).toLocaleTimeString('es-ES')}</p>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                     </div>
                                     
-                                    {/* ✅ Área de respuesta */}
                                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                                         <textarea 
                                             value={replyText}
@@ -720,11 +856,9 @@ const UserView: React.FC<{
                                     </div>
                                 </div>
                             ) : (
-                                // ✅ NUEVA: Vista de lista - Agrupar notificaciones por caso
                                 <>
                                     {localUser.notifications && localUser.notifications.length > 0 ? (
                                         (() => {
-                                            // Agrupar por caseId
                                             const groupedByCaseId: Record<string, UserNotification[]> = {};
                                             localUser.notifications.forEach(n => {
                                                 const caseId = n.caseId || 'SIN_CASO';
@@ -737,10 +871,22 @@ const UserView: React.FC<{
                                             return Object.entries(groupedByCaseId).map(([caseId, messages]) => (
                                                 <div 
                                                     key={caseId}
-                                                    onClick={() => setExpandedCaseId(caseId)}
+                                                    onClick={async () => {
+                                                        // Marcar mensajes como leídos al abrir
+                                                        const unreadMessages = messages.filter(m => !m.read);
+                                                        if (unreadMessages.length > 0) {
+                                                            const { markAsRead } = await import('./services/storageService');
+                                                            await Promise.all(unreadMessages.map(msg => markAsRead(msg.id)));
+                                                            const updatedNotifications = await getUserNotifications(user.encryptedCode);
+                                                            setLocalUser(prev => ({ ...prev, notifications: updatedNotifications }));
+                                                            const { getUnreadCount } = await import('./services/storageService');
+                                                            const unreadCount = await getUnreadCount(localUser.encryptedCode);
+                                                            setMessageUnreadCount(unreadCount);
+                                                        }
+                                                        setExpandedCaseId(caseId);
+                                                    }}
                                                     className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-900/50 dark:to-gray-800/50 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 hover:shadow-md hover:from-blue-100 hover:to-indigo-100 dark:hover:from-gray-900 dark:hover:to-gray-800 transition cursor-pointer"
                                                 >
-                                                    {/* Encabezado del caso */}
                                                     <div className="flex items-center justify-between mb-3">
                                                         <div>
                                                             <p className="text-xs text-gray-500 dark:text-gray-400 font-semibold">CASO</p>
@@ -751,14 +897,12 @@ const UserView: React.FC<{
                                                         </div>
                                                     </div>
                                                     
-                                                    {/* Mostrar último mensaje y remitente */}
                                                     <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg mt-2">
                                                         <p className="text-xs text-gray-400 font-bold mb-1">De: {messages[messages.length - 1].senderName || messages[messages.length - 1].senderCode}</p>
                                                         <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{messages[messages.length - 1].content}</p>
                                                         <p className="text-xs text-gray-400 mt-2">{new Date(messages[messages.length - 1].timestamp).toLocaleString('es-ES')}</p>
                                                     </div>
                                                     
-                                                    {/* Botón de ver detalles */}
                                                     <div className="mt-3 flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
                                                         <span>Ver conversación completa</span>
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>

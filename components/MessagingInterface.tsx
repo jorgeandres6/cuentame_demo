@@ -16,6 +16,7 @@ interface MessagingInterfaceProps {
   userCode: string;
   userRole: UserRole;
   isStaff: boolean;
+  onUnreadCountChange?: (count: number) => void;  // Callback para notificar cambios en el contador
 }
 
 interface ConversationState {
@@ -29,7 +30,8 @@ interface ConversationState {
 export const MessagingInterface: React.FC<MessagingInterfaceProps> = ({
   userCode,
   userRole,
-  isStaff
+  isStaff,
+  onUnreadCountChange
 }) => {
   const [inbox, setInbox] = useState<Message[]>([]);
   const [messagesByCase, setMessagesByCase] = useState<{ [caseId: string]: Message[] }>({});
@@ -117,6 +119,10 @@ export const MessagingInterface: React.FC<MessagingInterfaceProps> = ({
   const loadUnreadCount = async () => {
     const count = await getUnreadCount(userCode);
     setUnreadCount(count);
+    // Notificar al componente padre
+    if (onUnreadCountChange) {
+      onUnreadCountChange(count);
+    }
   };
 
   // NUEVA FUNCIÓN: Cargar conversación de un caso específico
@@ -139,14 +145,18 @@ export const MessagingInterface: React.FC<MessagingInterfaceProps> = ({
     });
 
     // Marcar como leídos los mensajes no leídos
-    caseMessages.forEach((msg) => {
-      if (msg.status === 'UNREAD' && msg.recipientCode === userCode) {
-        markAsRead(msg.id);
-      }
-    });
+    const unreadMessages = caseMessages.filter(
+      (msg) => msg.status === 'UNREAD' && msg.recipientCode === userCode
+    );
+    
+    if (unreadMessages.length > 0) {
+      await Promise.all(unreadMessages.map((msg) => markAsRead(msg.id)));
+      // Recargar inbox y contador después de marcar como leídos
+      await loadInbox();
+      await loadUnreadCount();
+    }
 
     setViewMode('conversation');
-    loadUnreadCount();
   };
 
   const loadConversation = async (otherCode: string) => {
@@ -160,14 +170,18 @@ export const MessagingInterface: React.FC<MessagingInterfaceProps> = ({
     });
 
     // Marcar como leídos
-    messages.forEach((msg) => {
-      if (msg.status === 'UNREAD' && msg.recipientCode === userCode) {
-        markAsRead(msg.id);
-      }
-    });
+    const unreadMessages = messages.filter(
+      (msg) => msg.status === 'UNREAD' && msg.recipientCode === userCode
+    );
+    
+    if (unreadMessages.length > 0) {
+      await Promise.all(unreadMessages.map((msg) => markAsRead(msg.id)));
+      // Recargar inbox y contador después de marcar como leídos
+      await loadInbox();
+      await loadUnreadCount();
+    }
 
     setViewMode('conversation');
-    loadUnreadCount();
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -370,30 +384,36 @@ export const MessagingInterface: React.FC<MessagingInterfaceProps> = ({
                     No hay mensajes aún. ¡Inicia la conversación!
                   </p>
                 ) : (
-                  conversationState.messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      style={{
-                        ...styles.message,
-                        ...(msg.senderCode === userCode
-                          ? styles.messageSent
-                          : styles.messageReceived)
-                      }}
-                    >
-                      <div style={styles.messageContent}>
-                        <div style={styles.messageSender}>
-                          <strong>{msg.senderCode}</strong>
+                  conversationState.messages.map((msg) => {
+                    // Determinar si el remitente es STAFF/ADMIN (DECE) o un usuario
+                    const isDECESender = msg.senderRole === UserRole.STAFF || msg.senderRole === UserRole.ADMIN;
+                    const senderLabel = isDECESender ? 'DECE' : 'USUARIO';
+                    
+                    return (
+                      <div
+                        key={msg.id}
+                        style={{
+                          ...styles.message,
+                          ...(msg.senderCode === userCode
+                            ? styles.messageSent
+                            : styles.messageReceived)
+                        }}
+                      >
+                        <div style={styles.messageContent}>
+                          <div style={styles.messageSender}>
+                            <strong>{senderLabel}</strong>
+                          </div>
+                          <p style={styles.messageText}>{msg.content}</p>
+                          <small style={styles.messageTime}>
+                            {new Date(msg.createdAt).toLocaleString('es-EC')}
+                          </small>
                         </div>
-                        <p style={styles.messageText}>{msg.content}</p>
-                        <small style={styles.messageTime}>
-                          {new Date(msg.createdAt).toLocaleString('es-EC')}
-                        </small>
+                        {msg.status === 'UNREAD' && (
+                          <span style={styles.unreadIndicator}>●</span>
+                        )}
                       </div>
-                      {msg.status === 'UNREAD' && (
-                        <span style={styles.unreadIndicator}>●</span>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>

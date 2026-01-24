@@ -39,6 +39,19 @@ export interface PsychographicProfile {
   personalityTraits: string[]; // Introvertido, ansioso, líder
 }
 
+export interface SociographicProfile {
+  educationLevel?: string;     // Nivel educativo (Primaria, Secundaria, Superior)
+  familyStructure?: string;    // Estructura familiar (Nuclear, Monoparental, Extendida)
+  socioeconomicStatus?: string; // Nivel socioeconómico (Bajo, Medio, Alto)
+  geographicLocation?: string; // Ubicación geográfica (Urbano, Rural)
+  culturalBackground?: string; // Antecedentes culturales o étnicos
+  religion?: string;           // Afiliación religiosa
+  occupationStatus?: string;   // Estado ocupacional (Estudiante, Empleado, Desempleado)
+  householdSize?: number;      // Tamaño del hogar
+  socialSupport?: string;      // Redes de apoyo social (Fuerte, Moderado, Débil)
+  livingConditions?: string;   // Condiciones de vivienda
+}
+
 export interface UserNotification {
   id: string;
   title: string;
@@ -71,7 +84,8 @@ export interface UserProfile {
     address?: string;
     guardianName?: string;
   };
-  psychographics?: PsychographicProfile;
+  psychographics?: PsychographicProfile; // Perfil psicográfico (intereses, valores, motivaciones)
+  sociographics?: SociographicProfile;   // Perfil sociográfico (educación, familia, contexto social)
   notifications: UserNotification[]; // Mensajes del sistema al usuario
 }
 

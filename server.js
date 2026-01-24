@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import { GoogleGenAI, Type } from "@google/genai";
+import axios from 'axios';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sql from 'mssql';
+import { BlobServiceClient, generateBlobSASQueryParameters, BlobSASPermissions, StorageSharedKeyCredential } from '@azure/storage-blob';
 
 dotenv.config();
 
@@ -35,6 +37,38 @@ const sqlConfig = {
 };
 
 let pool;
+
+// ============ CONFIGURACIÓN AZURE BLOB STORAGE ============
+const AZURE_STORAGE_ACCOUNT = process.env.AZURE_STORAGE_ACCOUNT;
+const AZURE_STORAGE_KEY = process.env.AZURE_STORAGE_KEY;
+const AZURE_STORAGE_CONTAINER = process.env.AZURE_STORAGE_CONTAINER || 'case-evidence';
+
+let blobServiceClient;
+if (AZURE_STORAGE_ACCOUNT && AZURE_STORAGE_KEY) {
+  try {
+    const connectionString = `DefaultEndpointsProtocol=https;AccountName=${AZURE_STORAGE_ACCOUNT};AccountKey=${AZURE_STORAGE_KEY};EndpointSuffix=core.windows.net`;
+    blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    console.log('✅ Azure Blob Storage configured');
+  } catch (error) {
+    console.warn('⚠️  Azure Blob Storage config failed:', error.message);
+  }
+} else {
+  console.warn('⚠️  Azure Blob Storage not configured (missing AZURE_STORAGE_ACCOUNT or AZURE_STORAGE_KEY)');
+}
+
+// ============ CONFIGURACIÓN AZURE FOUNDRY ============
+const azureFoundryConfig = {
+  endpoint: process.env.AZURE_FOUNDRY_ENDPOINT,
+  apiKey: process.env.AZURE_FOUNDRY_API_KEY,
+  deploymentName: process.env.AZURE_FOUNDRY_DEPLOYMENT_NAME || 'CuentameBot',
+  apiVersion: process.env.AZURE_FOUNDRY_API_VERSION || '2024-02-15-preview'
+};
+
+if (azureFoundryConfig.endpoint && azureFoundryConfig.apiKey) {
+  console.log('✅ Azure Foundry Agent configured');
+} else {
+  console.warn('⚠️  Azure Foundry not configured (missing endpoint or API key)');
+}
 
 // Middleware
 app.use(cors());
@@ -216,6 +250,153 @@ app.post('/api/classify', async (req, res) => {
   }
 });
 
+// ============ AZURE FOUNDRY ENDPOINTS ============
+
+/**
+ * Helper function to call Azure Foundry Agent
+ */
+async function callAzureFoundryAgent(messages, systemInstruction) {
+  try {
+    const url = `${azureFoundryConfig.endpoint}/openai/deployments/${azureFoundryConfig.deploymentName}/chat/completions?api-version=${azureFoundryConfig.apiVersion}`;
+    
+    const response = await axios.post(url, {
+      messages: [
+        { role: 'system', content: systemInstruction },
+        ...messages
+      ],
+      max_completion_tokens: 800
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': azureFoundryConfig.apiKey
+      },
+      timeout: 30000
+    });
+
+    return response.data.choices[0].message.content;
+  } catch (error) {
+    console.error('Azure Foundry API Error:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+/**
+ * Azure Foundry Chat Endpoint
+ */
+app.post('/api/azure-foundry/chat', async (req, res) => {
+  try {
+    const { history, newMessage, userRole } = req.body;
+
+    if (!azureFoundryConfig.endpoint || !azureFoundryConfig.apiKey) {
+      return res.status(500).json({ error: 'Azure Foundry not configured' });
+    }
+
+    // Determine system instruction based on user role
+    const isAdult = ['parent', 'teacher', 'admin', 'staff'].includes(userRole);
+    const systemInstruction = isAdult ? ADULT_SYSTEM_INSTRUCTION : STUDENT_SYSTEM_INSTRUCTION;
+
+    // Convert history to Azure format and add new message
+    const messages = [
+      ...history.map(msg => ({
+        role: msg.sender === 'ai' ? 'assistant' : 'user',
+        content: msg.text
+      })),
+      { role: 'user', content: newMessage }
+    ];
+
+    // Call Azure Foundry Agent
+    const responseText = await callAzureFoundryAgent(messages, systemInstruction);
+
+    res.json({ response: responseText });
+  } catch (error) {
+    console.error('Azure Foundry Chat Error:', error);
+    res.status(500).json({ 
+      error: 'Error communicating with Azure Foundry Agent',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * Azure Foundry Classification Endpoint
+ */
+app.post('/api/azure-foundry/classify', async (req, res) => {
+  try {
+    const { messages } = req.body;
+
+    if (!azureFoundryConfig.endpoint || !azureFoundryConfig.apiKey) {
+      return res.status(500).json({ error: 'Azure Foundry not configured' });
+    }
+
+    // Build conversation summary for classification
+    const conversationText = messages
+      .map(msg => `${msg.sender === 'ai' ? 'Agente' : 'Usuario'}: ${msg.text}`)
+      .join('\\n\\n');
+
+    const classificationPrompt = `
+Analiza la siguiente conversación y clasifícala según los protocolos del MINEDUC Ecuador.
+
+Conversación:
+${conversationText}
+
+Proporciona una clasificación en formato JSON con:
+{
+  "typology": "Una de: Conflicto leve entre pares, Acoso escolar (bullying), Violencia física grave, Violencia sexual, Violencia intrafamiliar detectada, Discriminación o xenofobia, Ideación suicida o autolesiones, Violencia digital, Abandono escolar o negligencia, Conflicto docente-estudiante",
+  "riskLevel": "low | medium | high | critical",
+  "summary": "Resumen ejecutivo del caso para la Ficha de Registro (2-3 oraciones)",
+  "recommendations": ["Lista de 3-5 recomendaciones técnicas para el DECE"],
+  "psychographics": {
+    "interests": ["intereses identificados"],
+    "values": ["valores identificados"],
+    "motivations": ["motivaciones identificadas"],
+    "lifestyle": ["aspectos del estilo de vida"],
+    "personalityTraits": ["rasgos de personalidad identificados"]
+  }
+}
+
+Responde SOLO con el JSON, sin texto adicional.
+`;
+
+    const systemInstruction = `Eres un experto en análisis de casos educativos según normativa MINEDUC Ecuador. 
+Clasifica casos basándote en protocolos de violencia, rutas de actuación y enfoque de derechos.
+Proporciona respuestas estructuradas en JSON.`;
+
+    const classificationMessages = [
+      { role: 'user', content: classificationPrompt }
+    ];
+
+    const responseText = await callAzureFoundryAgent(classificationMessages, systemInstruction);
+
+    // Parse JSON response
+    let classification;
+    try {
+      // Remove markdown code blocks if present
+      const cleanedResponse = responseText.replace(/\`\`\`json\\n?/g, '').replace(/\`\`\`\\n?/g, '').trim();
+      classification = JSON.parse(cleanedResponse);
+    } catch (parseError) {
+      console.error('Failed to parse classification JSON:', responseText);
+      throw new Error('Invalid classification response format');
+    }
+
+    res.json(classification);
+  } catch (error) {
+    console.error('Azure Foundry Classification Error:', error);
+    res.status(500).json({
+      typology: "Conflicto leve entre pares",
+      riskLevel: "medium",
+      summary: "Error en clasificación automática. Revisión manual requerida.",
+      recommendations: ["Entrevista DECE"],
+      psychographics: {
+        interests: [],
+        values: [],
+        motivations: [],
+        lifestyle: [],
+        personalityTraits: []
+      }
+    });
+  }
+});
+
 // ============ INICIALIZAR CONEXIÓN A BD ============
 async function initializeDatabase() {
   try {
@@ -249,10 +430,22 @@ async function createTables() {
         email NVARCHAR(255),
         demographics NVARCHAR(MAX),
         psychographics NVARCHAR(MAX),
+        sociographics NVARCHAR(MAX),
         notifications NVARCHAR(MAX),
         createdAt DATETIME DEFAULT GETUTCDATE(),
         updatedAt DATETIME DEFAULT GETUTCDATE()
       );
+    `);
+
+    // Agregar columna sociographics si no existe (migración)
+    await request.query(`
+      IF NOT EXISTS (
+        SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'UserProfiles' AND COLUMN_NAME = 'sociographics'
+      )
+      BEGIN
+        ALTER TABLE UserProfiles ADD sociographics NVARCHAR(MAX);
+      END
     `);
 
     // Tabla de Casos
@@ -316,6 +509,25 @@ async function createTables() {
         INDEX idx_recipient (recipientCode),
         INDEX idx_status (status),
         INDEX idx_created (createdAt)
+      );
+    `);
+
+    // Tabla de Evidencias (Azure Blob Storage)
+    await request.query(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'CaseEvidence')
+      CREATE TABLE CaseEvidence (
+        id NVARCHAR(50) PRIMARY KEY,
+        caseId NVARCHAR(50) NOT NULL,
+        blobName NVARCHAR(500) NOT NULL,
+        fileName NVARCHAR(255) NOT NULL,
+        contentType NVARCHAR(100),
+        fileSize BIGINT,
+        uploadedBy NVARCHAR(50),
+        uploadedByRole NVARCHAR(20),
+        createdAt DATETIME DEFAULT GETUTCDATE(),
+        deletedAt DATETIME NULL,
+        INDEX idx_case (caseId),
+        INDEX idx_deleted (deletedAt)
       );
     `);
 
@@ -1202,6 +1414,287 @@ app.get('/api/messages/by-case/:caseId', async (req, res) => {
     res.json(messages.recordset || []);
   } catch (error) {
     console.error('❌ [CASE] Error obteniendo mensajes del caso:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ ENDPOINTS AZURE BLOB STORAGE - EVIDENCIAS ============
+
+// POST /api/evidence/upload-url - Generar SAS token para subir evidencia
+app.post('/api/evidence/upload-url', async (req, res) => {
+  try {
+    const { caseId, fileName, contentType, fileSize } = req.body;
+    const userCode = req.headers['x-user-code'];
+
+    console.log('🔐 Generando SAS para subir evidencia:', { caseId, fileName, userCode });
+
+    if (!caseId || !fileName || !contentType) {
+      return res.status(400).json({ error: 'Missing required fields: caseId, fileName, contentType' });
+    }
+
+    if (!userCode) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!blobServiceClient) {
+      return res.status(503).json({ error: 'Azure Blob Storage not configured' });
+    }
+
+    // Validar tipo de archivo (imágenes, PDFs, documentos, videos, audios, archivos comprimidos)
+    const allowedTypes = [
+      // Imágenes
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      // Documentos
+      'application/pdf', 'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      // Videos
+      'video/mp4', 'video/mpeg', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+      // Audios
+      'audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/aac', 'audio/mp4',
+      // Archivos comprimidos
+      'application/zip', 'application/x-rar-compressed', 'application/vnd.rar'
+    ];
+    if (!allowedTypes.includes(contentType)) {
+      return res.status(400).json({ error: 'File type not allowed. Accepted: images, PDFs, documents, videos, audio files, ZIP and RAR archives.' });
+    }
+
+    // Validar tamaño (máx 100MB para soportar videos)
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    if (fileSize && fileSize > maxSize) {
+      return res.status(400).json({ error: 'File size exceeds 10MB limit' });
+    }
+
+    // Generar nombre único del blob con prefijo del caso
+    const timestamp = Date.now();
+    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const blobName = `${caseId}/${timestamp}_${sanitizedFileName}`;
+
+    const containerClient = blobServiceClient.getContainerClient(AZURE_STORAGE_CONTAINER);
+    
+    // Crear contenedor si no existe
+    await containerClient.createIfNotExists();
+
+    const blobClient = containerClient.getBlobClient(blobName);
+
+    // Generar SAS token con permisos de escritura (válido por 1 hora)
+    const sasOptions = {
+      containerName: AZURE_STORAGE_CONTAINER,
+      blobName: blobName,
+      permissions: BlobSASPermissions.parse('w'), // write only
+      startsOn: new Date(),
+      expiresOn: new Date(new Date().valueOf() + 3600 * 1000), // 1 hora
+      contentType: contentType
+    };
+
+    const sasToken = generateBlobSASQueryParameters(
+      sasOptions,
+      new StorageSharedKeyCredential(AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY)
+    ).toString();
+
+    const uploadUrl = `${blobClient.url}?${sasToken}`;
+
+    console.log('✅ SAS generado para:', blobName);
+    res.json({ 
+      uploadUrl, 
+      blobName,
+      expiresIn: 3600 
+    });
+  } catch (error) {
+    console.error('❌ Error generando SAS token:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/evidence/register - Registrar evidencia en BD después de subir
+app.post('/api/evidence/register', async (req, res) => {
+  try {
+    const { caseId, blobName, fileName, contentType, fileSize } = req.body;
+    const userCode = req.headers['x-user-code'];
+
+    console.log('📝 Registrando evidencia:', { caseId, blobName, userCode });
+
+    if (!caseId || !blobName || !fileName) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!userCode) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!pool) {
+      return res.status(500).json({ error: 'Database not connected' });
+    }
+
+    // Obtener info del usuario
+    let userReq = pool.request();
+    const userResult = await userReq
+      .input('code', sql.NVarChar, userCode)
+      .query('SELECT id, role FROM UserProfiles WHERE encryptedCode = @code');
+
+    if (userResult.recordset.length === 0) {
+      return res.status(400).json({ error: 'User not found' });
+    }
+
+    const user = userResult.recordset[0];
+    const evidenceId = `ev_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    // Insertar registro de evidencia
+    let insertReq = pool.request();
+    await insertReq
+      .input('id', sql.NVarChar, evidenceId)
+      .input('caseId', sql.NVarChar, caseId)
+      .input('blobName', sql.NVarChar, blobName)
+      .input('fileName', sql.NVarChar, fileName)
+      .input('contentType', sql.NVarChar, contentType)
+      .input('fileSize', sql.BigInt, fileSize || 0)
+      .input('uploadedBy', sql.NVarChar, userCode)
+      .input('uploadedByRole', sql.NVarChar, user.role)
+      .input('createdAt', sql.DateTime, now)
+      .query(`
+        INSERT INTO CaseEvidence (id, caseId, blobName, fileName, contentType, fileSize, uploadedBy, uploadedByRole, createdAt)
+        VALUES (@id, @caseId, @blobName, @fileName, @contentType, @fileSize, @uploadedBy, @uploadedByRole, @createdAt)
+      `);
+
+    console.log('✅ Evidencia registrada:', evidenceId);
+    res.json({ 
+      id: evidenceId,
+      message: 'Evidence registered successfully' 
+    });
+  } catch (error) {
+    console.error('❌ Error registrando evidencia:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/evidence/case/:caseId - Listar evidencias de un caso
+app.get('/api/evidence/case/:caseId', async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const userCode = req.headers['x-user-code'];
+
+    console.log('📋 Listando evidencias del caso:', caseId);
+
+    if (!userCode) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!pool) {
+      return res.status(500).json({ error: 'Database not connected' });
+    }
+
+    if (!blobServiceClient) {
+      return res.status(503).json({ error: 'Azure Blob Storage not configured' });
+    }
+
+    // Obtener evidencias de la BD
+    let request = pool.request();
+    const result = await request
+      .input('caseId', sql.NVarChar, caseId)
+      .query(`
+        SELECT id, blobName, fileName, contentType, fileSize, uploadedBy, uploadedByRole, createdAt
+        FROM CaseEvidence
+        WHERE caseId = @caseId AND deletedAt IS NULL
+        ORDER BY createdAt DESC
+      `);
+
+    const evidences = result.recordset;
+
+    // Generar URLs de lectura con SAS temporal
+    const evidencesWithUrls = await Promise.all(
+      evidences.map(async (ev) => {
+        const blobClient = blobServiceClient
+          .getContainerClient(AZURE_STORAGE_CONTAINER)
+          .getBlobClient(ev.blobName);
+
+        // Generar SAS token de solo lectura (válido por 1 hora)
+        const sasOptions = {
+          containerName: AZURE_STORAGE_CONTAINER,
+          blobName: ev.blobName,
+          permissions: BlobSASPermissions.parse('r'), // read only
+          startsOn: new Date(),
+          expiresOn: new Date(new Date().valueOf() + 3600 * 1000)
+        };
+
+        const sasToken = generateBlobSASQueryParameters(
+          sasOptions,
+          new StorageSharedKeyCredential(AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY)
+        ).toString();
+
+        return {
+          ...ev,
+          url: `${blobClient.url}?${sasToken}`,
+          expiresIn: 3600
+        };
+      })
+    );
+
+    console.log(`✅ ${evidencesWithUrls.length} evidencias encontradas`);
+    res.json(evidencesWithUrls);
+  } catch (error) {
+    console.error('❌ Error listando evidencias:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/evidence/:evidenceId - Eliminar evidencia (soft delete)
+app.delete('/api/evidence/:evidenceId', async (req, res) => {
+  try {
+    const { evidenceId } = req.params;
+    const userCode = req.headers['x-user-code'];
+
+    console.log('🗑️  Eliminando evidencia:', evidenceId, 'por:', userCode);
+
+    if (!userCode) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!pool) {
+      return res.status(500).json({ error: 'Database not connected' });
+    }
+
+    // Verificar que el usuario tenga permisos (debe ser staff/admin o el que subió)
+    let userReq = pool.request();
+    const userResult = await userReq
+      .input('code', sql.NVarChar, userCode)
+      .query('SELECT id, role FROM UserProfiles WHERE encryptedCode = @code');
+
+    if (userResult.recordset.length === 0) {
+      return res.status(400).json({ error: 'User not found' });
+    }
+
+    const user = userResult.recordset[0];
+    const isStaffOrAdmin = ['STAFF', 'ADMIN'].includes(user.role);
+
+    // Obtener evidencia
+    let evReq = pool.request();
+    const evResult = await evReq
+      .input('id', sql.NVarChar, evidenceId)
+      .query('SELECT uploadedBy, blobName FROM CaseEvidence WHERE id = @id AND deletedAt IS NULL');
+
+    if (evResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'Evidence not found' });
+    }
+
+    const evidence = evResult.recordset[0];
+
+    // Verificar permisos
+    if (!isStaffOrAdmin && evidence.uploadedBy !== userCode) {
+      return res.status(403).json({ error: 'Not authorized to delete this evidence' });
+    }
+
+    // Soft delete en BD
+    const now = new Date().toISOString();
+    let deleteReq = pool.request();
+    await deleteReq
+      .input('id', sql.NVarChar, evidenceId)
+      .input('deletedAt', sql.DateTime, now)
+      .query('UPDATE CaseEvidence SET deletedAt = @deletedAt WHERE id = @id');
+
+    console.log('✅ Evidencia eliminada:', evidenceId);
+    res.json({ message: 'Evidence deleted successfully' });
+  } catch (error) {
+    console.error('❌ Error eliminando evidencia:', error);
     res.status(500).json({ error: error.message });
   }
 });

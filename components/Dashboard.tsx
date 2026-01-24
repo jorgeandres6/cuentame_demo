@@ -7,11 +7,17 @@ interface DashboardProps {
   onSelectCase: (c: ConflictCase) => void;
 }
 
-const COLORS = {
-  [RiskLevel.LOW]: '#10B981',    // Green
-  [RiskLevel.MEDIUM]: '#F59E0B', // Amber
-  [RiskLevel.HIGH]: '#EF4444',   // Red
-  [RiskLevel.CRITICAL]: '#991B1B' // Deep Red
+const COLORS: { [key: string]: string } = {
+  // Valores en español (del enum)
+  'BAJO': '#10B981',      // Green
+  'MEDIO': '#F59E0B',     // Amber
+  'ALTO': '#EF4444',      // Red
+  'CRÍTICO': '#991B1B',   // Deep Red
+  // Claves en inglés (fallback por si acaso)
+  'LOW': '#10B981',
+  'MEDIUM': '#F59E0B',
+  'HIGH': '#EF4444',
+  'CRITICAL': '#991B1B'
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
@@ -25,6 +31,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
   // KPIs con protección contra datos vacíos
   const stats = useMemo(() => {
     if (!Array.isArray(cases)) return { total: 0, active: 0, critical: 0, resolved: 0 };
+    console.log('📈 [Dashboard Stats] Casos totales:', cases.length);
     return {
       total: cases.length,
       active: cases.filter(c => c.status !== CaseStatus.CLOSED).length,
@@ -35,16 +42,34 @@ const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
 
   // Data para Gráficos
   const riskData = useMemo(() => {
-    if (!Array.isArray(cases)) return [];
+    if (!Array.isArray(cases) || cases.length === 0) return [];
+    
+    console.log('🔍 [Dashboard] Cases recibidas:', cases.length, 'casos');
+    console.log('📊 [Dashboard] RiskLevel enum values:', Object.values(RiskLevel));
+    console.log('📊 [Dashboard] Primeros riskLevels de datos:', cases.slice(0, 3).map(c => c.riskLevel));
+    
     const counts = cases.reduce((acc, curr) => {
-      acc[curr.riskLevel] = (acc[curr.riskLevel] || 0) + 1;
+      const risk = curr.riskLevel || 'DESCONOCIDO';
+      acc[risk] = (acc[risk] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     
-    return Object.values(RiskLevel).map(level => ({
-      name: level,
+    console.log('📊 [Dashboard] Conteos calculados:', counts);
+    
+    // Mapear los valores del enum a los conteos, priorizando lo que existe en los datos
+    const allRisks = new Set([
+      ...Object.values(RiskLevel),
+      ...Object.keys(counts)
+    ]);
+    
+    const result = Array.from(allRisks).map(level => ({
+      name: String(level),
       value: counts[level] || 0
-    }));
+    })).filter(d => d.value > 0);
+    
+    console.log('📊 [Dashboard] riskData final:', result);
+    
+    return result;
   }, [cases]);
 
   // Filtrado y búsqueda
@@ -97,6 +122,33 @@ const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
     }
   };
 
+  // Función para obtener el badge de riesgo con color dinámico (mismos colores que los gráficos)
+  const getRiskBadge = (riskLevel: RiskLevel) => {
+    const bgColor = COLORS[riskLevel] || COLORS[String(riskLevel).toUpperCase()] || '#6366F1';
+    return (
+      <span
+        className="px-3 py-1.5 inline-flex text-xs leading-5 font-bold rounded-full text-white shadow-sm border border-gray-200"
+        style={{
+          backgroundColor: bgColor,
+          borderColor: bgColor,
+        }}
+      >
+        {riskLevel}
+      </span>
+    );
+  };
+
+  // Función para obtener el color de fondo de la fila según riesgo
+  const getRiskRowColor = (riskLevel: RiskLevel) => {
+    const colorMap: { [key in RiskLevel]: string } = {
+      [RiskLevel.LOW]: 'hover:bg-emerald-50 dark:hover:bg-emerald-950/20',
+      [RiskLevel.MEDIUM]: 'hover:bg-amber-50 dark:hover:bg-amber-950/20',
+      [RiskLevel.HIGH]: 'hover:bg-orange-50 dark:hover:bg-orange-950/20',
+      [RiskLevel.CRITICAL]: 'hover:bg-red-50 dark:hover:bg-red-950/20'
+    };
+    return colorMap[riskLevel] || colorMap[RiskLevel.MEDIUM];
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-300 dark:border-gray-700 pb-4 gap-4">
@@ -132,50 +184,111 @@ const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 h-96 transition-colors duration-200">
+        {/* Gráfico de Barras - Distribución por Nivel de Riesgo */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <h3 className="text-lg font-bold mb-6 text-gray-900 dark:text-white flex items-center gap-2">
             <span className="w-1 h-6 bg-indigo-600 rounded"></span>
             Distribución por Nivel de Riesgo
           </h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <BarChart data={riskData}>
-              <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={true} stroke="#6B7280" tick={{fill: '#6B7280', fontWeight: 'bold'}} />
-              <YAxis fontSize={12} tickLine={false} axisLine={false} tick={{fill: '#6B7280'}} />
-              <Tooltip 
-                cursor={{ fill: '#374151', opacity: 0.1 }} 
-                contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: '#1F2937', color: '#fff' }} 
-              />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {riskData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[entry.name as RiskLevel] || '#6366F1'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {riskData && riskData.some(d => d.value > 0) ? (
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={riskData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
+                <XAxis 
+                  dataKey="name" 
+                  fontSize={11} 
+                  tickLine={false} 
+                  axisLine={{ stroke: '#D1D5DB' }}
+                  tick={{ fill: '#6B7280', fontWeight: 'bold' }} 
+                />
+                <YAxis 
+                  fontSize={11} 
+                  tickLine={false} 
+                  axisLine={{ stroke: '#D1D5DB' }}
+                  tick={{ fill: '#6B7280' }} 
+                />
+                <Tooltip 
+                  cursor={{ fill: '#374151', opacity: 0.15 }}
+                  contentStyle={{ 
+                    borderRadius: '8px', 
+                    border: 'none', 
+                    backgroundColor: '#1F2937', 
+                    color: '#fff',
+                    padding: '8px 12px',
+                    fontSize: '12px'
+                  }}
+                  formatter={(value) => [`${value} casos`, 'Cantidad']}
+                />
+                <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#6366F1">
+                  {riskData.map((entry, index) => (
+                    <Cell key={`bar-${index}`} fill={COLORS[entry.name] || '#6366F1'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-80 flex items-center justify-center bg-gray-50 dark:bg-gray-900/30 rounded-lg">
+              <div className="text-center">
+                <p className="text-gray-400 dark:text-gray-500 font-semibold">Sin casos registrados</p>
+                <p className="text-sm text-gray-400 dark:text-gray-600">Los gráficos aparecerán cuando haya datos</p>
+              </div>
+            </div>
+          )}
         </div>
         
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 h-96 transition-colors duration-200">
+        {/* Gráfico Pie - Estado del Sistema */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-300 dark:border-gray-700 transition-colors duration-200">
           <h3 className="text-lg font-bold mb-6 text-gray-900 dark:text-white flex items-center gap-2">
             <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-            Estado del Sistema
+            Distribución de Casos por Riesgo
           </h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <PieChart>
-              <Pie
-                data={riskData}
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                 {riskData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[entry.name as RiskLevel] || '#6366F1'} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: '#1F2937', color: '#fff' }} />
-              <Legend verticalAlign="bottom" height={36}/>
-            </PieChart>
-          </ResponsiveContainer>
+          {riskData && riskData.some(d => d.value > 0) ? (
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
+                <Pie
+                  data={riskData}
+                  cx="50%"
+                  cy="45%"
+                  innerRadius={50}
+                  outerRadius={100}
+                  paddingAngle={3}
+                  dataKey="value"
+                  label={({ name, value }) => `${name}: ${value}`}
+                  labelLine={false}
+                >
+                  {riskData.map((entry, index) => (
+                    <Cell key={`pie-${index}`} fill={COLORS[entry.name] || '#6366F1'} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: '10px',
+                    border: '1px solid #4B5563',
+                    backgroundColor: '#0B1224',
+                    color: '#F9FAFB',
+                    padding: '10px 14px',
+                    fontSize: '12px',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.35)'
+                  }}
+                  itemStyle={{ color: '#E5E7EB', fontWeight: 'bold' }}
+                  labelStyle={{ color: '#F9FAFB', fontWeight: 800, fontSize: 13, letterSpacing: 0.3 }}
+                  formatter={(value) => [`${value} casos`, 'Cantidad']}
+                  labelFormatter={(name) => `${name}`}
+                />
+                <Legend 
+                  verticalAlign="bottom" 
+                  height={40}
+                  formatter={(value, entry) => `${entry.payload.name}`}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-80 flex items-center justify-center bg-gray-50 dark:bg-gray-900/30 rounded-lg">
+              <div className="text-center">
+                <p className="text-gray-400 dark:text-gray-500 font-semibold">Sin casos registrados</p>
+                <p className="text-sm text-gray-400 dark:text-gray-600">Los gráficos aparecerán cuando haya datos</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -284,7 +397,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
                 </tr>
               ) : (
                 filteredCases?.map((c) => (
-                  <tr key={c.id} className="hover:bg-indigo-50 dark:hover:bg-gray-700 transition">
+                  <tr key={c.id} className={`${getRiskRowColor(c.riskLevel)} transition border-b border-gray-200 dark:border-gray-700`}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-700 dark:text-indigo-400">{c.id}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-semibold">
                       {new Date(c.createdAt).toLocaleDateString('es-EC', { year: 'numeric', month: 'short', day: 'numeric' })} 
@@ -295,12 +408,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cases = [], onSelectCase }) => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">{getRoleBadge(c.reporterRole)}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full text-white shadow-sm
-                        ${c.riskLevel === RiskLevel.CRITICAL ? 'bg-red-700' : 
-                          c.riskLevel === RiskLevel.HIGH ? 'bg-orange-600' : 
-                          c.riskLevel === RiskLevel.MEDIUM ? 'bg-amber-500' : 'bg-emerald-600'}`}>
-                        {c.riskLevel}
-                      </span>
+                      {getRiskBadge(c.riskLevel)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-800 dark:text-gray-300">{c.status}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

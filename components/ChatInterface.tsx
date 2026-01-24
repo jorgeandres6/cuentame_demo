@@ -1,7 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, ConflictCase, RiskLevel, CaseStatus, UserProfile, InterventionRecord, UserRole } from '../types';
-import { sendMessageToGemini, classifyCaseWithGemini } from '../services/geminiService';
+// AI Service Provider - Switch between Gemini and Azure Foundry
+// import { sendMessageToGemini, classifyCaseWithGemini } from '../services/geminiService'; // Gemini (legacy)
+import { sendMessageToAzureFoundry as sendMessageToAI, classifyCaseWithAzureFoundry as classifyCaseWithAI } from '../services/azureFoundryService'; // Azure Foundry (active)
 import { saveCase, generateEncryptedCode, saveUserProfile, addNotificationToUser, saveChat, createNewChat, addMessageToChat } from '../services/storageService';
 import { determineProtocol } from '../services/workflowService';
 
@@ -127,7 +129,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     setLoading(true);
     setRobotStatus('thinking');
 
-    const aiResponseText = await sendMessageToGemini(messages, userMsg.text, user.role);
+    const aiResponseText = await sendMessageToAI(messages, userMsg.text, user.role);
 
     // Detectar si la IA usó la frase de escalamiento
     if (aiResponseText.includes("remitir tu caso a un especialista")) {
@@ -154,7 +156,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onCaseSubmitted }) 
     setAnalyzing(true);
     setRobotStatus('thinking'); 
     
-    const classification = await classifyCaseWithGemini(messages);
+    const classification = await classifyCaseWithAI(messages);
     const { protocol, assignedTo } = determineProtocol(classification.riskLevel, classification.typology);
 
     const updatedUser: UserProfile = { 

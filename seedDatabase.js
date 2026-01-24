@@ -42,6 +42,17 @@ const DEMO_USERS = [
       values: ['Honestidad', 'Amistad'],
       motivations: ['Aprobación', 'Aprendizaje'],
       lifestyle: ['Estudiante']
+    }),
+    sociographics: JSON.stringify({
+      educationLevel: 'Secundaria',
+      familyStructure: 'Nuclear',
+      socioeconomicStatus: 'Medio',
+      geographicLocation: 'Urbano',
+      culturalBackground: 'Mestizo',
+      occupationStatus: 'Estudiante',
+      householdSize: 4,
+      socialSupport: 'Moderado',
+      livingConditions: 'Adecuadas'
     })
   },
   {
@@ -59,6 +70,16 @@ const DEMO_USERS = [
       values: ['Familia', 'Seguridad'],
       motivations: ['Bienestar hijo', 'Educación'],
       lifestyle: ['Padre/Madre']
+    }),
+    sociographics: JSON.stringify({
+      educationLevel: 'Superior',
+      familyStructure: 'Nuclear',
+      socioeconomicStatus: 'Medio-Alto',
+      geographicLocation: 'Urbano',
+      occupationStatus: 'Empleado',
+      householdSize: 4,
+      socialSupport: 'Fuerte',
+      livingConditions: 'Buenas'
     })
   },
   {
@@ -76,6 +97,16 @@ const DEMO_USERS = [
       values: ['Enseñanza', 'Ética'],
       motivations: ['Formar personas', 'Cambio social'],
       lifestyle: ['Docente']
+    }),
+    sociographics: JSON.stringify({
+      educationLevel: 'Superior - Maestría',
+      familyStructure: 'Nuclear',
+      socioeconomicStatus: 'Medio',
+      geographicLocation: 'Urbano',
+      occupationStatus: 'Docente',
+      householdSize: 3,
+      socialSupport: 'Fuerte',
+      livingConditions: 'Buenas'
     })
   }
 ];
@@ -149,11 +180,12 @@ async function seedDatabase() {
           .input('grade', sql.NVarChar, user.grade)
           .input('demographics', sql.NVarChar, user.demographics)
           .input('psychographics', sql.NVarChar, user.psychographics)
+          .input('sociographics', sql.NVarChar, user.sociographics || '{}')
           .query(`
             IF NOT EXISTS (SELECT 1 FROM UserProfiles WHERE id = @id)
             BEGIN
-              INSERT INTO UserProfiles (id, fullName, encryptedCode, password, role, phone, grade, demographics, psychographics, notifications)
-              VALUES (@id, @fullName, @encryptedCode, @password, @role, @phone, @grade, @demographics, @psychographics, '[]')
+              INSERT INTO UserProfiles (id, fullName, encryptedCode, password, role, phone, grade, demographics, psychographics, sociographics, notifications)
+              VALUES (@id, @fullName, @encryptedCode, @password, @role, @phone, @grade, @demographics, @psychographics, @sociographics, '[]')
             END
           `);
         console.log(`  ✅ Usuario ${user.encryptedCode} insertado`);
