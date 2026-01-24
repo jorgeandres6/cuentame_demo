@@ -1,11 +1,26 @@
 -- ============================================================
--- MIGRACIÓN: Agregar campos sociográficos a UserProfiles
+-- MIGRACIÓN: Agregar campos psicográficos y sociográficos a UserProfiles
 -- Fecha: 2026-01-23
--- Propósito: Agregar perfil sociográfico para mejor contexto
+-- Propósito: Agregar perfiles psicográfico y sociográfico para mejor contexto
 --            de casos por parte del staff y el bot
 -- ============================================================
 
--- 1. Agregar columna sociographics si no existe
+-- 1. Agregar columna psychographics si no existe
+IF NOT EXISTS (
+  SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_NAME = 'UserProfiles' AND COLUMN_NAME = 'psychographics'
+)
+BEGIN
+  ALTER TABLE UserProfiles ADD psychographics NVARCHAR(MAX);
+  PRINT '✅ Columna psychographics agregada';
+END
+ELSE
+BEGIN
+  PRINT '⚠️  Columna psychographics ya existe';
+END
+GO
+
+-- 2. Agregar columna sociographics si no existe
 IF NOT EXISTS (
   SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
   WHERE TABLE_NAME = 'UserProfiles' AND COLUMN_NAME = 'sociographics'
@@ -20,7 +35,38 @@ BEGIN
 END
 GO
 
--- 2. Actualizar usuarios existentes con datos sociográficos por defecto
+-- 3. Actualizar usuarios existentes con datos PSICOGRÁFICOS por defecto
+UPDATE UserProfiles
+SET psychographics = CASE 
+  WHEN role = 'STUDENT' THEN JSON_QUERY('{
+    "interests": ["Deportes", "Música"],
+    "values": ["Honestidad", "Amistad"],
+    "motivations": ["Aprobación social", "Aprendizaje"],
+    "lifestyle": ["Estudiante activo"],
+    "personalityTraits": ["Introvertido", "Sensible"]
+  }')
+  WHEN role = 'PARENT' THEN JSON_QUERY('{
+    "interests": ["Familia", "Educación"],
+    "values": ["Familia", "Seguridad"],
+    "motivations": ["Bienestar de hijos", "Educación"],
+    "lifestyle": ["Padre/Madre responsable"],
+    "personalityTraits": ["Protector", "Responsable"]
+  }')
+  WHEN role = 'TEACHER' THEN JSON_QUERY('{
+    "interests": ["Educación", "Desarrollo personal"],
+    "values": ["Enseñanza", "Ética"],
+    "motivations": ["Formar personas", "Cambio social"],
+    "lifestyle": ["Docente comprometido"],
+    "personalityTraits": ["Empático", "Dedicado"]
+  }')
+  ELSE '{}'
+END
+WHERE psychographics IS NULL OR psychographics = '';
+
+PRINT '✅ Perfiles psicográficos inicializados';
+GO
+
+-- 4. Actualizar usuarios existentes con datos SOCIOGRÁFICOS por defecto
 UPDATE UserProfiles
 SET sociographics = CASE 
   WHEN role = 'STUDENT' THEN JSON_QUERY('{
@@ -61,10 +107,14 @@ WHERE sociographics IS NULL OR sociographics = '';
 PRINT '✅ Perfiles sociográficos inicializados';
 GO
 
--- 3. Verificar resultados
+-- 5. Verificar resultados
 SELECT 
   encryptedCode,
   role,
+  CASE 
+    WHEN LEN(ISNULL(psychographics, '')) > 0 THEN '✅ Con datos'
+    ELSE '⚠️  Sin datos'
+  END as Estado_Psychographics,
   CASE 
     WHEN LEN(ISNULL(sociographics, '')) > 0 THEN '✅ Con datos'
     ELSE '⚠️  Sin datos'
@@ -73,7 +123,14 @@ FROM UserProfiles;
 
 PRINT '📊 Migración completada - Verifica los resultados arriba';
 GO
-
+PSICOGRÁFICOS incluyen:
+-- - interests: Hobbies, gustos, actividades preferidas
+-- - values: Qué valoran (justicia, lealtad, honestidad)
+-- - motivations: Metas, qué los mueve, aspiraciones
+-- - lifestyle: Rutinas, entorno social, hábitos
+-- - personalityTraits: Introvertido, ansioso, líder, resiliente
+--
+-- Los campos SOCIOGRÁFICOS
 -- ============================================================
 -- NOTAS PARA EL STAFF:
 -- 
