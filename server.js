@@ -738,19 +738,28 @@ app.get('/api/users/profile/:code', async (req, res) => {
     // Parse JSON fields if they exist
     const user = result.recordset[0];
     if (hasProfiles) {
-      if (user.psychographics) {
+      // Manejar psychographics (puede ser null, string vacío, o JSON válido)
+      if (user.psychographics && typeof user.psychographics === 'string' && user.psychographics.trim() !== '') {
         try {
           user.psychographics = JSON.parse(user.psychographics);
         } catch (e) {
+          console.warn('⚠️  Failed to parse psychographics:', e.message);
           user.psychographics = null;
         }
+      } else {
+        user.psychographics = null;
       }
-      if (user.sociographics) {
+      
+      // Manejar sociographics (puede ser null, string vacío, o JSON válido)
+      if (user.sociographics && typeof user.sociographics === 'string' && user.sociographics.trim() !== '') {
         try {
           user.sociographics = JSON.parse(user.sociographics);
         } catch (e) {
+          console.warn('⚠️  Failed to parse sociographics:', e.message);
           user.sociographics = null;
         }
+      } else {
+        user.sociographics = null;
       }
     }
 
@@ -811,22 +820,28 @@ app.post('/api/users/login', async (req, res) => {
     // Parse JSON fields if they exist
     const user = result.recordset[0];
     
-    if (user.psychographics && typeof user.psychographics === 'string') {
+    // Manejar psychographics (puede ser null, string vacío, o JSON válido)
+    if (user.psychographics && typeof user.psychographics === 'string' && user.psychographics.trim() !== '') {
       try {
         user.psychographics = JSON.parse(user.psychographics);
       } catch (e) {
         console.warn('⚠️  Failed to parse psychographics:', e.message);
         user.psychographics = null;
       }
+    } else {
+      user.psychographics = null;
     }
     
-    if (user.sociographics && typeof user.sociographics === 'string') {
+    // Manejar sociographics (puede ser null, string vacío, o JSON válido)
+    if (user.sociographics && typeof user.sociographics === 'string' && user.sociographics.trim() !== '') {
       try {
         user.sociographics = JSON.parse(user.sociographics);
       } catch (e) {
         console.warn('⚠️  Failed to parse sociographics:', e.message);
         user.sociographics = null;
       }
+    } else {
+      user.sociographics = null;
     }
 
     console.log('✅ Login successful for code:', code, 'Role:', user.role);
