@@ -1,5 +1,23 @@
 # 📊 Perfiles Sociográficos y Psicográficos - Guía de Uso
 
+## ✅ Estado Actual de la Base de Datos
+
+**Los campos ya están creados en la tabla `UserProfiles`:**
+- ✅ `psychographics` (NVARCHAR(MAX)) - Almacena datos JSON del perfil psicográfico
+- ✅ `sociographics` (NVARCHAR(MAX)) - Almacena datos JSON del perfil sociográfico
+
+**No necesitas:**
+- ❌ Crear la tabla UserProfiles (ya existe)
+- ❌ Agregar estas columnas manualmente (ya están)
+- ❌ Ejecutar ALTER TABLE (el servidor lo hace automáticamente al iniciar)
+
+**Sí necesitas:**
+- ✅ Actualizar los datos JSON de usuarios existentes
+- ✅ Ejecutar el script de migración si quieres valores por defecto
+- ✅ Usar el script `seedDatabase.js` para insertar nuevos usuarios con perfiles completos
+
+---
+
 ## 🎯 Propósito
 
 Los campos de perfil **sociográfico** y **psicográfico** permiten al staff y al bot AI tener un contexto más completo del usuario, facilitando:
@@ -80,15 +98,117 @@ interface SociographicProfile {
 }
 ```
 
+Luego ejecuta: `npm run seed`
+
+---
+
+## 🚀 Inicio Rápido - Paso a Paso
+
+### Para Agregar Perfiles Psicográficos a la Base de Datos:
+
+**Paso 1: Conectar a Azure Portal**
+1. Ve a https://portal.azure.com
+2. Busca tu base de datos `cuentame-app`
+3. Abre **Query Editor**
+
+**Paso 2: Verificar que los Campos Existen**
+```sql
+SELECT COLUMN_NAME 
+FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'UserProfiles' 
+  AND COLUMN_NAME IN ('psychographics', 'sociographics');
+```
+✅ Debe mostrar ambos campos
+
+**Paso 3: Ver Usuarios Actuales**
+```sql
+SELECT encryptedCode, 
+       CASE WHEN psychographics IS NOT NULL THEN '✅ Con perfil' 
+            ELSE '⚠️ Sin perfil' END as Estado_Psico,
+       CASE WHEN sociographics IS NOT NULL THEN '✅ Con perfil' 
+            ELSE '⚠️ Sin perfil' END as Estado_Socio
+FROM UserProfiles;
+```
+
+**Paso 4: Actualizar Perfiles**
+
+Opción A - Manual (un usuario):
+```sql
+UPDATE UserProfiles
+SET 
+  psychographics = '{"interests": ["Deportes"], "values": ["Honestidad"], "motivations": ["Aprendizaje"], "lifestyle": ["Estudiante"], "personalityTraits": ["Introvertido"]}',
+  sociographics = '{"educationLevel": "Secundaria", "schoolName": "Colegio Nacional", "schoolType": "Público", "familyStructure": "Nuclear", "socioeconomicStatus": "Medio", "socialSupport": "Moderado"}'
+WHERE encryptedCode = 'EST-2026-A';
+```
+
+Opción B - Automática (todos los usuarios):
+```sql
+-- Ejecutar el archivo completo: MIGRATION_ADD_SOCIOGRAPHICS.sql
+```
+
+**Paso 5: Verificar Resultados**
+```sql
+SELECT encryptedCode, psychographics, sociographics 
+FROM UserProfiles 
+WHERE encryptedCode = 'EST-2026-A';
+```
+
 ---
 
 ## 🔧 Cómo Actualizar los Perfiles
 
-### 1️⃣ **En Azure SQL Database**
+> **Nota Importante:** Los campos `psychographics` y `sociographics` **ya existen** en la tabla `UserProfiles` desde la creación inicial. No necesitas crear la tabla ni agregar columnas manualmente.
 
-Ejecuta en el Query Editor:
+### 1️⃣ **Verificar que los Campos Existen**
 
 ```sql
+-- Verificar estructura de la tabla
+SELECT COLUMN_NAME, DATA_TYPE 
+FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'UserProfiles' 
+  AND COLUMN_NAME IN ('psychographics', 'sociographics');
+
+-- Debe mostrar:
+-- psychographics | NVARCHAR
+-- sociographics  | NVARCHAR
+```
+
+### 2️⃣ **Actualizar Perfiles de Usuarios Existentes**
+
+Ejecuta en el Query Editor de Azure Portal:
+
+#### **Opción A: Actualizar UN usuario específico**
+
+```sql
+-- Actualizar perfil psicográfico de un estudiante
+UPDATE UserProfiles
+SET psychographics = '{
+  "interests": ["Fútbol", "Arte"],
+  "values": ["Familia", "Respeto"],
+  "motivations": ["Superación personal"],
+  "lifestyle": ["Estudiante comprometido"],
+  "personalityTraits": ["Resiliente", "Empático"]
+}'
+WHERE encryptedCode = 'EST-2026-A';
+
+-- Verificar
+SELECT encryptedCode, psychographics 
+FROM UserProfiles 
+WHERE encryptedCode = 'EST-2026-A';
+```
+
+#### **Opción B: Script de Migración Automática (Valores por Defecto)**
+
+Si ya ejecutaste `npm run seed`, los usuarios demo ya tienen perfiles. Si tienes usuarios SIN perfiles, usa:
+
+```sql
+-- Script de migración automática
+-- Ver archivo: MIGRATION_ADD_SOCIOGRAPHICS.sql
+```
+
+Ejecuta el archivo [MIGRATION_ADD_SOCIOGRAPHICS.sql](../MIGRATION_ADD_SOCIOGRAPHICS.sql) completo en Azure Portal.
+
+---
 -- Actualizar perfil sociográfico de un usuario específico
 UPDATE UserProfiles
 SET sociographics = '{
@@ -116,7 +236,11 @@ SET psychographics = '{
 WHERE encryptedCode = 'EST-2026-A';
 ```
 
-### 2️⃣ **Al Crear Nuevos Usuarios (seedDatabase.js)**
+---
+
+### 3️⃣ **Al Crear Nuevos Usuarios (seedDatabase.js)**
+
+Si quieres agregar usuarios con perfiles completos desde el código:
 
 ```javascript
 const newUser = {
