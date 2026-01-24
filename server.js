@@ -176,8 +176,40 @@ const classificationSchema = {
 };
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+app.get('/api/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: {
+      connected: false,
+      tables: []
+    },
+    environment: {
+      nodeEnv: process.env.NODE_ENV,
+      port: port,
+      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      hasDbConfig: !!(process.env.DB_SERVER && process.env.DB_NAME)
+    }
+  };
+
+  try {
+    if (pool && pool.connected) {
+      health.database.connected = true;
+      
+      // Check tables
+      const tablesResult = await pool.request().query(`
+        SELECT TABLE_NAME 
+        FROM INFORMATION_SCHEMA.TABLES 
+        WHERE TABLE_TYPE = 'BASE TABLE'
+      `);
+      
+      health.database.tables = tablesResult.recordset.map(r => r.TABLE_NAME);
+    }
+  } catch (error) {
+    health.database.error = error.message;
+  }
+
+  res.json(health);
 });
 
 // Chat endpoint
