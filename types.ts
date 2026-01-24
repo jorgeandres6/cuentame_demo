@@ -41,6 +41,8 @@ export interface PsychographicProfile {
 
 export interface SociographicProfile {
   educationLevel?: string;     // Nivel educativo (Primaria, Secundaria, Superior)
+  schoolName?: string;         // Nombre del colegio o institución educativa
+  schoolType?: string;         // Tipo de colegio (Público, Privado, Fiscomisional)
   familyStructure?: string;    // Estructura familiar (Nuclear, Monoparental, Extendida)
   socioeconomicStatus?: string; // Nivel socioeconómico (Bajo, Medio, Alto)
   geographicLocation?: string; // Ubicación geográfica (Urbano, Rural)

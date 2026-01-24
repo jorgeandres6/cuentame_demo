@@ -13,8 +13,10 @@
 - ✅ Índices optimizados para consultas JSON
 
 ### 2️⃣ **Tipos TypeScript** ([types.ts](../types.ts))
-- ✅ Nueva interface `SociographicProfile` con 10 campos:
+- ✅ Nueva interface `SociographicProfile` con 12 campos:
   - `educationLevel` - Nivel educativo
+  - `schoolName` - Nombre del colegio o institución educativa
+  - `schoolType` - Tipo de colegio (Público, Privado, Fiscomisional)
   - `familyStructure` - Estructura familiar
   - `socioeconomicStatus` - Nivel socioeconómico
   - `geographicLocation` - Ubicación geográfica
@@ -91,6 +93,8 @@ FROM UserProfiles;
 ```json
 {
   "educationLevel": "Secundaria",
+  "schoolName": "Unidad Educativa Municipal",
+  "schoolType": "Público",
   "familyStructure": "Nuclear",
   "socioeconomicStatus": "Medio",
   "geographicLocation": "Urbano",

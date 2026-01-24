@@ -25,6 +25,8 @@ UPDATE UserProfiles
 SET sociographics = CASE 
   WHEN role = 'STUDENT' THEN JSON_QUERY('{
     "educationLevel": "Secundaria",
+    "schoolName": "Unidad Educativa",
+    "schoolType": "Público",
     "familyStructure": "Nuclear",
     "socioeconomicStatus": "Medio",
     "geographicLocation": "Urbano",
@@ -77,6 +79,8 @@ GO
 -- 
 -- Los campos sociográficos incluyen:
 -- - educationLevel: Nivel educativo
+-- - schoolName: Nombre del colegio o institución educativa
+-- - schoolType: Tipo de colegio (Público, Privado, Fiscomisional)
 -- - familyStructure: Estructura familiar
 -- - socioeconomicStatus: Nivel socioeconómico
 -- - geographicLocation: Ubicación geográfica

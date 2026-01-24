@@ -45,6 +45,8 @@ const DEMO_USERS = [
     }),
     sociographics: JSON.stringify({
       educationLevel: 'Secundaria',
+      schoolName: 'Unidad Educativa Municipal',
+      schoolType: 'Público',
       familyStructure: 'Nuclear',
       socioeconomicStatus: 'Medio',
       geographicLocation: 'Urbano',

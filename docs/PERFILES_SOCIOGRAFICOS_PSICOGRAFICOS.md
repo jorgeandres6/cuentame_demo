@@ -49,6 +49,8 @@ interface PsychographicProfile {
 ```typescript
 interface SociographicProfile {
   educationLevel?: string;      // Primaria, Secundaria, Superior
+  schoolName?: string;          // Nombre del colegio o institución educativa
+  schoolType?: string;          // Público, Privado, Fiscomisional
   familyStructure?: string;     // Nuclear, Monoparental, Extendida
   socioeconomicStatus?: string; // Bajo, Medio, Alto
   geographicLocation?: string;  // Urbano, Rural
@@ -65,6 +67,8 @@ interface SociographicProfile {
 ```json
 {
   "educationLevel": "Secundaria",
+  "schoolName": "Colegio Nacional Montúfar",
+  "schoolType": "Público",
   "familyStructure": "Monoparental",
   "socioeconomicStatus": "Bajo",
   "geographicLocation": "Urbano",
@@ -89,6 +93,8 @@ Ejecuta en el Query Editor:
 UPDATE UserProfiles
 SET sociographics = '{
   "educationLevel": "Secundaria",
+  "schoolName": "Colegio Nacional Montúfar",
+  "schoolType": "Público",
   "familyStructure": "Monoparental",
   "socioeconomicStatus": "Bajo",
   "geographicLocation": "Urbano",
@@ -131,6 +137,8 @@ const newUser = {
   }),
   sociographics: JSON.stringify({
     educationLevel: 'Secundaria',
+    schoolName: 'Unidad Educativa Particular San José',
+    schoolType: 'Privado',
     familyStructure: 'Nuclear',
     socioeconomicStatus: 'Medio-Alto',
     geographicLocation: 'Urbano',
