@@ -673,13 +673,40 @@ app.get('/api/users/profile/:code', async (req, res) => {
     const request = pool.request();
     const result = await request
       .input('code', sql.NVarChar, code)
-      .query('SELECT id, encryptedCode, role FROM UserProfiles WHERE encryptedCode = @code');
+      .query(`
+        SELECT 
+          id, 
+          encryptedCode, 
+          role, 
+          grade,
+          psychographics, 
+          sociographics 
+        FROM UserProfiles 
+        WHERE encryptedCode = @code
+      `);
 
     if (result.recordset.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    res.json(result.recordset[0]);
+    // Parse JSON fields
+    const user = result.recordset[0];
+    if (user.psychographics) {
+      try {
+        user.psychographics = JSON.parse(user.psychographics);
+      } catch (e) {
+        user.psychographics = null;
+      }
+    }
+    if (user.sociographics) {
+      try {
+        user.sociographics = JSON.parse(user.sociographics);
+      } catch (e) {
+        user.sociographics = null;
+      }
+    }
+
+    res.json(user);
   } catch (error) {
     console.error('Error obteniendo perfil:', error);
     res.status(500).json({ error: error.message });
@@ -698,13 +725,42 @@ app.post('/api/users/login', async (req, res) => {
     const result = await request
       .input('code', sql.NVarChar, code.toUpperCase())
       .input('password', sql.NVarChar, password)
-      .query('SELECT id, encryptedCode, role FROM UserProfiles WHERE UPPER(encryptedCode) = @code AND password = @password');
+      .query(`
+        SELECT 
+          id, 
+          encryptedCode, 
+          role, 
+          grade,
+          fullName,
+          phone,
+          psychographics, 
+          sociographics 
+        FROM UserProfiles 
+        WHERE UPPER(encryptedCode) = @code AND password = @password
+      `);
 
     if (result.recordset.length === 0) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    res.json(result.recordset[0]);
+    // Parse JSON fields
+    const user = result.recordset[0];
+    if (user.psychographics) {
+      try {
+        user.psychographics = JSON.parse(user.psychographics);
+      } catch (e) {
+        user.psychographics = null;
+      }
+    }
+    if (user.sociographics) {
+      try {
+        user.sociographics = JSON.parse(user.sociographics);
+      } catch (e) {
+        user.sociographics = null;
+      }
+    }
+
+    res.json(user);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
