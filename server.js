@@ -670,17 +670,26 @@ app.get('/api/users/profile/:code', async (req, res) => {
       return res.status(500).json({ error: 'Database not connected' });
     }
 
+    // First check if profile columns exist
+    const columnsCheck = await pool.request().query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'UserProfiles' 
+        AND COLUMN_NAME IN ('psychographics', 'sociographics')
+    `);
+    
+    const hasProfiles = columnsCheck.recordset.length === 2;
+    
+    // Build query based on column existence
+    const selectFields = hasProfiles 
+      ? 'id, encryptedCode, role, grade, psychographics, sociographics'
+      : 'id, encryptedCode, role, grade';
+
     const request = pool.request();
     const result = await request
       .input('code', sql.NVarChar, code)
       .query(`
-        SELECT 
-          id, 
-          encryptedCode, 
-          role, 
-          grade,
-          psychographics, 
-          sociographics 
+        SELECT ${selectFields}
         FROM UserProfiles 
         WHERE encryptedCode = @code
       `);
@@ -689,20 +698,22 @@ app.get('/api/users/profile/:code', async (req, res) => {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    // Parse JSON fields
+    // Parse JSON fields if they exist
     const user = result.recordset[0];
-    if (user.psychographics) {
-      try {
-        user.psychographics = JSON.parse(user.psychographics);
-      } catch (e) {
-        user.psychographics = null;
+    if (hasProfiles) {
+      if (user.psychographics) {
+        try {
+          user.psychographics = JSON.parse(user.psychographics);
+        } catch (e) {
+          user.psychographics = null;
+        }
       }
-    }
-    if (user.sociographics) {
-      try {
-        user.sociographics = JSON.parse(user.sociographics);
-      } catch (e) {
-        user.sociographics = null;
+      if (user.sociographics) {
+        try {
+          user.sociographics = JSON.parse(user.sociographics);
+        } catch (e) {
+          user.sociographics = null;
+        }
       }
     }
 
@@ -722,19 +733,27 @@ app.post('/api/users/login', async (req, res) => {
     }
 
     const request = pool.request();
+    
+    // First check if profile columns exist
+    const columnsCheck = await pool.request().query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'UserProfiles' 
+        AND COLUMN_NAME IN ('psychographics', 'sociographics')
+    `);
+    
+    const hasProfiles = columnsCheck.recordset.length === 2;
+    
+    // Build query based on column existence
+    const selectFields = hasProfiles 
+      ? 'id, encryptedCode, role, grade, fullName, phone, psychographics, sociographics'
+      : 'id, encryptedCode, role, grade, fullName, phone';
+    
     const result = await request
       .input('code', sql.NVarChar, code.toUpperCase())
       .input('password', sql.NVarChar, password)
       .query(`
-        SELECT 
-          id, 
-          encryptedCode, 
-          role, 
-          grade,
-          fullName,
-          phone,
-          psychographics, 
-          sociographics 
+        SELECT ${selectFields}
         FROM UserProfiles 
         WHERE UPPER(encryptedCode) = @code AND password = @password
       `);
@@ -743,20 +762,22 @@ app.post('/api/users/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Parse JSON fields
+    // Parse JSON fields if they exist
     const user = result.recordset[0];
-    if (user.psychographics) {
-      try {
-        user.psychographics = JSON.parse(user.psychographics);
-      } catch (e) {
-        user.psychographics = null;
+    if (hasProfiles) {
+      if (user.psychographics) {
+        try {
+          user.psychographics = JSON.parse(user.psychographics);
+        } catch (e) {
+          user.psychographics = null;
+        }
       }
-    }
-    if (user.sociographics) {
-      try {
-        user.sociographics = JSON.parse(user.sociographics);
-      } catch (e) {
-        user.sociographics = null;
+      if (user.sociographics) {
+        try {
+          user.sociographics = JSON.parse(user.sociographics);
+        } catch (e) {
+          user.sociographics = null;
+        }
       }
     }
 
