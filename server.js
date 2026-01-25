@@ -32,11 +32,61 @@ const sqlConfig = {
     encrypt: true,
     trustServerCertificate: false,
     connectTimeout: 30000,
-    requestTimeout: 30000
+    requestTimeout: 30000,
+    enableArithAbort: true
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
   }
 };
 
 let pool;
+let isConnecting = false;
+
+// Función para asegurar conexión a la base de datos
+async function ensureDbConnection() {
+  // Si el pool existe y está conectado, retornarlo
+  if (pool && pool.connected) {
+    return pool;
+  }
+
+  // Si ya hay una conexión en proceso, esperar
+  if (isConnecting) {
+    let attempts = 0;
+    while (isConnecting && attempts < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    if (pool && pool.connected) {
+      return pool;
+    }
+  }
+
+  // Intentar reconectar
+  isConnecting = true;
+  try {
+    console.log('🔄 Reconnecting to database...');
+    if (pool) {
+      try {
+        await pool.close();
+      } catch (e) {
+        // Ignorar errores al cerrar
+      }
+    }
+    pool = new sql.ConnectionPool(sqlConfig);
+    await pool.connect();
+    console.log('✅ Database reconnected successfully');
+    return pool;
+  } catch (error) {
+    console.error('❌ Database reconnection failed:', error.message);
+    pool = null;
+    throw error;
+  } finally {
+    isConnecting = false;
+  }
+}
 
 // ============ CONFIGURACIÓN AZURE BLOB STORAGE ============
 const AZURE_STORAGE_ACCOUNT = process.env.AZURE_STORAGE_ACCOUNT;
@@ -73,6 +123,17 @@ if (azureFoundryConfig.endpoint && azureFoundryConfig.apiKey) {
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Middleware para asegurar conexión a BD en todas las rutas API
+app.use('/api', async (req, res, next) => {
+  try {
+    await ensureDbConnection();
+    next();
+  } catch (error) {
+    console.error('❌ Database connection middleware error:', error);
+    res.status(503).json({ error: 'Database connection unavailable' });
+  }
+});
 
 // Initialize Gemini with API key from environment
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -531,6 +592,13 @@ async function initializeDatabase() {
     console.log('DB Name:', sqlConfig.database);
     
     pool = new sql.ConnectionPool(sqlConfig);
+    
+    // Manejar eventos de conexión
+    pool.on('error', err => {
+      console.error('❌ Database pool error:', err);
+      pool = null;
+    });
+
     await pool.connect();
     console.log('✅ Conectado a Azure SQL Database');
     await createTables();
@@ -776,13 +844,16 @@ app.post('/api/users/login', async (req, res) => {
     
     console.log('🔐 Login attempt for code:', code);
     
-    if (!pool) {
+    // Asegurar conexión a la BD
+    const dbPool = await ensureDbConnection();
+    
+    if (!dbPool) {
       console.error('❌ Database pool not connected');
       return res.status(500).json({ error: 'Database not connected' });
     }
 
     // First check what columns exist
-    const columnsQuery = await pool.request().query(`
+    const columnsQuery = await dbPool.request().query(`
       SELECT COLUMN_NAME 
       FROM INFORMATION_SCHEMA.COLUMNS 
       WHERE TABLE_NAME = 'UserProfiles'
@@ -802,7 +873,7 @@ app.post('/api/users/login', async (req, res) => {
     
     console.log('🔍 Querying with fields:', selectFields);
     
-    const request = pool.request();
+    const request = dbPool.request();
     const result = await request
       .input('code', sql.NVarChar, code.toUpperCase())
       .input('password', sql.NVarChar, password)
